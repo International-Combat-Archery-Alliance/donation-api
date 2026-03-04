@@ -1,0 +1,73 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  ICAA Donation API
+
+Parameters:
+  architecture:
+    Description: Architecture to run on
+    Type: String
+    Default: x86_64
+    AllowedValues:
+      - arm64
+      - x86_64
+  StripeSecretKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: Sandbox stripe secret key for testing
+  StripeEndpointSecret:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: Sandbox local signing key for webhook
+
+Globals:
+  Function:
+    Timeout: 10
+    MemorySize: 128
+    Environment:
+      Variables:
+        STRIPE_SECRET_KEY: !Ref StripeSecretKey
+        STRIPE_ENDPOINT_SECRET: !Ref StripeEndpointSecret
+
+Resources:
+  DonationHttp:
+    Type: AWS::Serverless::HttpApi
+  DonationApiMapping:
+    Type: AWS::ApiGatewayV2::ApiMapping
+    Properties:
+      DomainName: api.icaa.world
+      ApiId: !Ref DonationHttp
+      Stage: !Ref DonationHttp.Stage
+      ApiMappingKey: donations
+  ICAADonationAPI:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      Architectures:
+        - !Ref architecture
+      Policies:
+        - Statement:
+          - Effect: Allow
+            Action:
+              - ssm:GetParameter
+            Resource: 
+              - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/stripeSecretKey"
+              - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/stripeEndpointSecret"
+      Events:
+        APIEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DonationHttp
+            Path: '/{proxy+}'
+            Method: ANY
+    Metadata:
+      DockerTag: v1
+      DockerContext: .
+      Dockerfile: Dockerfile
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ICAADonationAPI}
+      RetentionInDays: 30

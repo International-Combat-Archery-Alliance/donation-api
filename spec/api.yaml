@@ -1,0 +1,88 @@
+openapi: 3.0.0
+info:
+  title: ICAA Donation API
+  version: 1.0.0
+  description: An API for accepting donations to ICAA via Stripe.
+servers:
+  - url: https://api.icaa.world/
+    description: Production server
+  - url: http://localhost:3000/
+    description: Local dev server
+paths:
+  /donations/v1:
+    post:
+      summary: Create a donation
+      description: Creates a new donation and returns a Stripe checkout session URL.
+      security: []
+      requestBody:
+        description: Donation details
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDonationRequest'
+      responses:
+        '200':
+          description: Checkout session created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateDonationResponse'
+        '400':
+          description: Bad request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Unknown server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    CreateDonationRequest:
+      type: object
+      required:
+        - amount
+        - currency
+        - donorEmail
+      properties:
+        amount:
+          type: integer
+          description: Amount in smallest currency unit (e.g., cents for USD)
+          minimum: 100
+          example: 5000
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: "USD"
+        donorEmail:
+          type: string
+          format: email
+          example: "donor@example.com"
+
+    CreateDonationResponse:
+      type: object
+      required:
+        - checkoutUrl
+      properties:
+        checkoutUrl:
+          type: string
+          format: uri
+          example: "https://checkout.stripe.com/p/cs_test_..."
+
+    Error:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          example: "BAD_REQUEST"
+        message:
+          type: string
+          example: "Invalid donation amount"
