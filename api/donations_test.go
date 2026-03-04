@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"iter"
 	"log/slog"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/International-Combat-Archery-Alliance/donation-api/donations"
 	"github.com/International-Combat-Archery-Alliance/payments"
+	"github.com/Rhymond/go-money"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
@@ -44,7 +47,7 @@ func TestPostDonationsV1_Success(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	api := NewAPI(mockManager, "https://example.com/return", logger, LOCAL)
+	api := NewAPI(mockManager, nil, nil, "https://example.com/return", logger, LOCAL)
 
 	request := PostDonationsV1RequestObject{
 		Body: &PostDonationsV1JSONRequestBody{
@@ -77,7 +80,7 @@ func TestPostDonationsV1_InvalidAmount(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	api := NewAPI(mockManager, "https://example.com/return", logger, LOCAL)
+	api := NewAPI(mockManager, nil, nil, "https://example.com/return", logger, LOCAL)
 
 	request := PostDonationsV1RequestObject{
 		Body: &PostDonationsV1JSONRequestBody{
@@ -97,8 +100,8 @@ func TestPostDonationsV1_InvalidAmount(t *testing.T) {
 		t.Fatalf("expected PostDonationsV1400JSONResponse, got %T", response)
 	}
 
-	if errorResponse.Error != "BAD_REQUEST" {
-		t.Errorf("expected error code BAD_REQUEST, got %s", errorResponse.Error)
+	if errorResponse.Code != BadRequest {
+		t.Errorf("expected error code BadRequest, got %s", errorResponse.Code)
 	}
 
 	if errorResponse.Message == "" {
@@ -114,7 +117,7 @@ func TestPostDonationsV1_CheckoutManagerError(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	api := NewAPI(mockManager, "https://example.com/return", logger, LOCAL)
+	api := NewAPI(mockManager, nil, nil, "https://example.com/return", logger, LOCAL)
 
 	request := PostDonationsV1RequestObject{
 		Body: &PostDonationsV1JSONRequestBody{
@@ -134,8 +137,8 @@ func TestPostDonationsV1_CheckoutManagerError(t *testing.T) {
 		t.Fatalf("expected PostDonationsV1500JSONResponse, got %T", response)
 	}
 
-	if errorResponse.Error != "INTERNAL_ERROR" {
-		t.Errorf("expected error code INTERNAL_ERROR, got %s", errorResponse.Error)
+	if errorResponse.Code != InternalError {
+		t.Errorf("expected error code InternalError, got %s", errorResponse.Code)
 	}
 
 	if errorResponse.Message != "Failed to create donation checkout" {
@@ -152,7 +155,7 @@ func TestPostDonationsV1_GenericError(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	api := NewAPI(mockManager, "https://example.com/return", logger, LOCAL)
+	api := NewAPI(mockManager, nil, nil, "https://example.com/return", logger, LOCAL)
 
 	request := PostDonationsV1RequestObject{
 		Body: &PostDonationsV1JSONRequestBody{
@@ -172,8 +175,8 @@ func TestPostDonationsV1_GenericError(t *testing.T) {
 		t.Fatalf("expected PostDonationsV1500JSONResponse, got %T", response)
 	}
 
-	if errorResponse.Error != "INTERNAL_ERROR" {
-		t.Errorf("expected error code INTERNAL_ERROR, got %s", errorResponse.Error)
+	if errorResponse.Code != InternalError {
+		t.Errorf("expected error code InternalError, got %s", errorResponse.Code)
 	}
 }
 
@@ -192,7 +195,7 @@ func TestPostDonationsV1_DifferentCurrencies(t *testing.T) {
 			}
 
 			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-			api := NewAPI(mockManager, "https://example.com/return", logger, LOCAL)
+			api := NewAPI(mockManager, nil, nil, "https://example.com/return", logger, LOCAL)
 
 			request := PostDonationsV1RequestObject{
 				Body: &PostDonationsV1JSONRequestBody{
@@ -234,7 +237,7 @@ func TestPostDonationsV1_VaryingAmounts(t *testing.T) {
 			}
 
 			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-			api := NewAPI(mockManager, "https://example.com/return", logger, LOCAL)
+			api := NewAPI(mockManager, nil, nil, "https://example.com/return", logger, LOCAL)
 
 			request := PostDonationsV1RequestObject{
 				Body: &PostDonationsV1JSONRequestBody{
@@ -258,5 +261,753 @@ func TestPostDonationsV1_VaryingAmounts(t *testing.T) {
 				t.Errorf("expected client secret secret_amount, got %s", successResponse.ClientSecret)
 			}
 		})
+	}
+}
+
+// MockPaymentQuerierWithPagination is a mock implementation of payments.PaymentQuerier that supports pagination
+type MockPaymentQuerierWithPagination struct {
+	Payments []payments.Payment
+	Err      error
+}
+
+func (m *MockPaymentQuerierWithPagination) ListCharges(ctx context.Context, params payments.ChargeListParams) iter.Seq2[payments.Payment, error] {
+	return func(yield func(payments.Payment, error) bool) {
+		if m.Err != nil {
+			yield(payments.Payment{}, m.Err)
+			return
+		}
+		for _, payment := range m.Payments {
+			if !yield(payment, nil) {
+				return
+			}
+		}
+	}
+}
+
+func (m *MockPaymentQuerierWithPagination) ListChargesPaginated(ctx context.Context, params payments.ChargeListPaginatedParams) (payments.ChargesPage, error) {
+	if m.Err != nil {
+		return payments.ChargesPage{}, m.Err
+	}
+
+	// Find starting index based on cursor
+	startIdx := 0
+	if params.Cursor != "" {
+		for i, p := range m.Payments {
+			if p.ID == params.Cursor {
+				startIdx = i + 1
+				break
+			}
+		}
+	}
+
+	// Calculate end index
+	endIdx := startIdx + params.Limit
+	if endIdx > len(m.Payments) {
+		endIdx = len(m.Payments)
+	}
+
+	// Get page of payments
+	pagePayments := m.Payments[startIdx:endIdx]
+
+	// Determine if there are more results
+	hasMore := endIdx < len(m.Payments)
+
+	// Generate next cursor
+	nextCursor := ""
+	if hasMore && len(pagePayments) > 0 {
+		nextCursor = pagePayments[len(pagePayments)-1].ID
+	}
+
+	return payments.ChargesPage{
+		Payments:   pagePayments,
+		HasMore:    hasMore,
+		NextCursor: nextCursor,
+	}, nil
+}
+
+func TestGetDonationsV1_Success(t *testing.T) {
+	querier := &MockPaymentQuerierWithPagination{
+		Payments: []payments.Payment{
+			{
+				ID:     "pay_1",
+				Amount: money.New(5000, "USD"),
+				Status: "succeeded",
+				BillingDetails: &payments.BillingDetails{
+					Email: "donor1@example.com",
+					Name:  "John Doe",
+					Address: &payments.Address{
+						Country: "US",
+						State:   "MA",
+					},
+				},
+				Created:  time.Now(),
+				Metadata: map[string]string{donations.MetadataKeyItemType: donations.MetadataValueDonation},
+			},
+			{
+				ID:     "pay_2",
+				Amount: money.New(10000, "USD"),
+				Status: "succeeded",
+				BillingDetails: &payments.BillingDetails{
+					Email: "donor2@example.com",
+					Name:  "Jane Smith",
+					Address: &payments.Address{
+						Country: "US",
+						State:   "CA",
+					},
+				},
+				Created:  time.Now(),
+				Metadata: map[string]string{donations.MetadataKeyItemType: donations.MetadataValueDonation},
+			},
+		},
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	api := NewAPI(nil, querier, nil, "https://example.com/return", logger, LOCAL)
+
+	request := GetDonationsV1RequestObject{
+		Params: GetDonationsV1Params{},
+	}
+
+	response, err := api.GetDonationsV1(context.Background(), request)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	successResponse, ok := response.(GetDonationsV1200JSONResponse)
+	if !ok {
+		t.Fatalf("expected GetDonationsV1200JSONResponse, got %T", response)
+	}
+
+	if len(successResponse.Items) != 2 {
+		t.Errorf("expected 2 items, got %d", len(successResponse.Items))
+	}
+
+	// Check first item
+	if successResponse.Items[0].Id != "pay_1" {
+		t.Errorf("expected first item ID pay_1, got %s", successResponse.Items[0].Id)
+	}
+	if successResponse.Items[0].Amount != 5000 {
+		t.Errorf("expected first item amount 5000, got %d", successResponse.Items[0].Amount)
+	}
+	if successResponse.Items[0].Currency != "USD" {
+		t.Errorf("expected first item currency USD, got %s", successResponse.Items[0].Currency)
+	}
+	if successResponse.Items[0].Status != "succeeded" {
+		t.Errorf("expected first item status succeeded, got %s", successResponse.Items[0].Status)
+	}
+
+	// No next cursor since we got all results
+	if successResponse.NextCursor != nil {
+		t.Error("expected no next cursor")
+	}
+}
+
+func TestGetDonationsV1_WithLimit(t *testing.T) {
+	querier := &MockPaymentQuerierWithPagination{
+		Payments: []payments.Payment{
+			{ID: "pay_1", Amount: money.New(1000, "USD"), Status: "succeeded", Created: time.Now()},
+			{ID: "pay_2", Amount: money.New(2000, "USD"), Status: "succeeded", Created: time.Now()},
+			{ID: "pay_3", Amount: money.New(3000, "USD"), Status: "succeeded", Created: time.Now()},
+			{ID: "pay_4", Amount: money.New(4000, "USD"), Status: "succeeded", Created: time.Now()},
+			{ID: "pay_5", Amount: money.New(5000, "USD"), Status: "succeeded", Created: time.Now()},
+		},
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	api := NewAPI(nil, querier, nil, "https://example.com/return", logger, LOCAL)
+
+	limit := 2
+	request := GetDonationsV1RequestObject{
+		Params: GetDonationsV1Params{
+			Limit: &limit,
+		},
+	}
+
+	response, err := api.GetDonationsV1(context.Background(), request)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	successResponse, ok := response.(GetDonationsV1200JSONResponse)
+	if !ok {
+		t.Fatalf("expected GetDonationsV1200JSONResponse, got %T", response)
+	}
+
+	if len(successResponse.Items) != 2 {
+		t.Errorf("expected 2 items, got %d", len(successResponse.Items))
+	}
+
+	// Should have next cursor since there are more results
+	if successResponse.NextCursor == nil {
+		t.Error("expected next cursor")
+	}
+}
+
+func TestGetDonationsV1_WithPagination(t *testing.T) {
+	querier := &MockPaymentQuerierWithPagination{
+		Payments: []payments.Payment{
+			{ID: "pay_1", Amount: money.New(1000, "USD"), Status: "succeeded", Created: time.Now()},
+			{ID: "pay_2", Amount: money.New(2000, "USD"), Status: "succeeded", Created: time.Now()},
+			{ID: "pay_3", Amount: money.New(3000, "USD"), Status: "succeeded", Created: time.Now()},
+		},
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	api := NewAPI(nil, querier, nil, "https://example.com/return", logger, LOCAL)
+
+	// First page
+	limit := 2
+	request1 := GetDonationsV1RequestObject{
+		Params: GetDonationsV1Params{
+			Limit: &limit,
+		},
+	}
+
+	response1, err := api.GetDonationsV1(context.Background(), request1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	successResponse1, ok := response1.(GetDonationsV1200JSONResponse)
+	if !ok {
+		t.Fatalf("expected GetDonationsV1200JSONResponse, got %T", response1)
+	}
+
+	if len(successResponse1.Items) != 2 {
+		t.Errorf("expected 2 items on first page, got %d", len(successResponse1.Items))
+	}
+
+	if successResponse1.NextCursor == nil {
+		t.Fatal("expected next cursor for first page")
+	}
+
+	// Second page using cursor
+	request2 := GetDonationsV1RequestObject{
+		Params: GetDonationsV1Params{
+			Limit:  &limit,
+			Cursor: successResponse1.NextCursor,
+		},
+	}
+
+	response2, err := api.GetDonationsV1(context.Background(), request2)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	successResponse2, ok := response2.(GetDonationsV1200JSONResponse)
+	if !ok {
+		t.Fatalf("expected GetDonationsV1200JSONResponse, got %T", response2)
+	}
+
+	if len(successResponse2.Items) != 1 {
+		t.Errorf("expected 1 item on second page, got %d", len(successResponse2.Items))
+	}
+
+	if successResponse2.NextCursor != nil {
+		t.Error("expected no next cursor on last page")
+	}
+}
+
+func TestGetDonationsV1_WithDateFilter(t *testing.T) {
+	now := time.Now()
+	yesterday := now.Add(-24 * time.Hour)
+	tomorrow := now.Add(24 * time.Hour)
+
+	querier := &MockPaymentQuerierWithPagination{
+		Payments: []payments.Payment{
+			{
+				ID:      "pay_1",
+				Amount:  money.New(5000, "USD"),
+				Status:  "succeeded",
+				Created: now,
+			},
+		},
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	api := NewAPI(nil, querier, nil, "https://example.com/return", logger, LOCAL)
+
+	request := GetDonationsV1RequestObject{
+		Params: GetDonationsV1Params{
+			CreatedAfter:  &yesterday,
+			CreatedBefore: &tomorrow,
+		},
+	}
+
+	response, err := api.GetDonationsV1(context.Background(), request)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	successResponse, ok := response.(GetDonationsV1200JSONResponse)
+	if !ok {
+		t.Fatalf("expected GetDonationsV1200JSONResponse, got %T", response)
+	}
+
+	if len(successResponse.Items) != 1 {
+		t.Errorf("expected 1 item, got %d", len(successResponse.Items))
+	}
+}
+
+func TestGetDonationsV1_NoPayments(t *testing.T) {
+	querier := &MockPaymentQuerierWithPagination{
+		Payments: []payments.Payment{},
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	api := NewAPI(nil, querier, nil, "https://example.com/return", logger, LOCAL)
+
+	request := GetDonationsV1RequestObject{
+		Params: GetDonationsV1Params{},
+	}
+
+	response, err := api.GetDonationsV1(context.Background(), request)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	successResponse, ok := response.(GetDonationsV1200JSONResponse)
+	if !ok {
+		t.Fatalf("expected GetDonationsV1200JSONResponse, got %T", response)
+	}
+
+	if len(successResponse.Items) != 0 {
+		t.Errorf("expected 0 items, got %d", len(successResponse.Items))
+	}
+
+	if successResponse.NextCursor != nil {
+		t.Error("expected no next cursor")
+	}
+}
+
+func TestGetDonationsV1_LimitExceedsMax(t *testing.T) {
+	querier := &MockPaymentQuerierWithPagination{
+		Payments: []payments.Payment{
+			{ID: "pay_1", Amount: money.New(1000, "USD"), Status: "succeeded", Created: time.Now()},
+		},
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	api := NewAPI(nil, querier, nil, "https://example.com/return", logger, LOCAL)
+
+	// Try to request more than max (100)
+	limit := 200
+	request := GetDonationsV1RequestObject{
+		Params: GetDonationsV1Params{
+			Limit: &limit,
+		},
+	}
+
+	response, err := api.GetDonationsV1(context.Background(), request)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	successResponse, ok := response.(GetDonationsV1200JSONResponse)
+	if !ok {
+		t.Fatalf("expected GetDonationsV1200JSONResponse, got %T", response)
+	}
+
+	// Should still return the item (limit capped at 100)
+	if len(successResponse.Items) != 1 {
+		t.Errorf("expected 1 item, got %d", len(successResponse.Items))
+	}
+}
+
+// Tests for GetDonationsV1PerState (moved from admin_test.go)
+
+func TestGetDonationsV1PerState_Success(t *testing.T) {
+	querier := &MockPaymentQuerierWithPagination{
+		Payments: []payments.Payment{
+			{
+				ID:     "pay_1",
+				Amount: money.New(5000, "USD"),
+				BillingDetails: &payments.BillingDetails{
+					Address: &payments.Address{
+						Country: "US",
+						State:   "MA",
+					},
+				},
+			},
+			{
+				ID:     "pay_2",
+				Amount: money.New(10000, "USD"),
+				BillingDetails: &payments.BillingDetails{
+					Address: &payments.Address{
+						Country: "US",
+						State:   "MA",
+					},
+				},
+			},
+		},
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	api := NewAPI(nil, querier, nil, "https://example.com/return", logger, LOCAL)
+
+	request := GetDonationsV1PerStateRequestObject{
+		Params: GetDonationsV1PerStateParams{},
+	}
+
+	response, err := api.GetDonationsV1PerState(context.Background(), request)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	successResponse, ok := response.(GetDonationsV1PerState200JSONResponse)
+	if !ok {
+		t.Fatalf("expected GetDonationsV1PerState200JSONResponse, got %T", response)
+	}
+
+	if len(successResponse.Aggregations) != 1 {
+		t.Errorf("expected 1 aggregation, got %d", len(successResponse.Aggregations))
+	}
+
+	agg := successResponse.Aggregations[0]
+	if agg.Country != "US" {
+		t.Errorf("expected country US, got %s", agg.Country)
+	}
+	if agg.State != "MA" {
+		t.Errorf("expected state MA, got %s", agg.State)
+	}
+	if agg.Count != 2 {
+		t.Errorf("expected count 2, got %d", agg.Count)
+	}
+	if agg.Money.Amount != 15000 {
+		t.Errorf("expected amount 15000, got %d", agg.Money.Amount)
+	}
+	if agg.Money.Currency != "USD" {
+		t.Errorf("expected currency USD, got %s", agg.Money.Currency)
+	}
+}
+
+func TestGetDonationsV1PerState_InvalidDateRange(t *testing.T) {
+	now := time.Now()
+	yesterday := now.Add(-24 * time.Hour)
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	api := NewAPI(nil, &MockPaymentQuerierWithPagination{}, nil, "https://example.com/return", logger, LOCAL)
+
+	request := GetDonationsV1PerStateRequestObject{
+		Params: GetDonationsV1PerStateParams{
+			CreatedAfter:  &now,
+			CreatedBefore: &yesterday,
+		},
+	}
+
+	response, err := api.GetDonationsV1PerState(context.Background(), request)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	errorResponse, ok := response.(GetDonationsV1PerState400JSONResponse)
+	if !ok {
+		t.Fatalf("expected GetDonationsV1PerState400JSONResponse, got %T", response)
+	}
+
+	if errorResponse.Code != InvalidDateRange {
+		t.Errorf("expected error code InvalidDateRange, got %s", errorResponse.Code)
+	}
+}
+
+func TestGetDonationsV1PerState_WithDateRange(t *testing.T) {
+	now := time.Now()
+	yesterday := now.Add(-24 * time.Hour)
+	tomorrow := now.Add(24 * time.Hour)
+
+	querier := &MockPaymentQuerierWithPagination{
+		Payments: []payments.Payment{
+			{
+				ID:     "pay_1",
+				Amount: money.New(5000, "USD"),
+				BillingDetails: &payments.BillingDetails{
+					Address: &payments.Address{
+						Country: "US",
+						State:   "MA",
+					},
+				},
+			},
+		},
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	api := NewAPI(nil, querier, nil, "https://example.com/return", logger, LOCAL)
+
+	request := GetDonationsV1PerStateRequestObject{
+		Params: GetDonationsV1PerStateParams{
+			CreatedAfter:  &yesterday,
+			CreatedBefore: &tomorrow,
+		},
+	}
+
+	response, err := api.GetDonationsV1PerState(context.Background(), request)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	successResponse, ok := response.(GetDonationsV1PerState200JSONResponse)
+	if !ok {
+		t.Fatalf("expected GetDonationsV1PerState200JSONResponse, got %T", response)
+	}
+
+	if len(successResponse.Aggregations) != 1 {
+		t.Errorf("expected 1 aggregation, got %d", len(successResponse.Aggregations))
+	}
+}
+
+func TestGetDonationsV1PerState_OnlyCreatedAfter(t *testing.T) {
+	yesterday := time.Now().Add(-24 * time.Hour)
+
+	querier := &MockPaymentQuerierWithPagination{
+		Payments: []payments.Payment{
+			{
+				ID:     "pay_1",
+				Amount: money.New(5000, "USD"),
+				BillingDetails: &payments.BillingDetails{
+					Address: &payments.Address{
+						Country: "US",
+						State:   "MA",
+					},
+				},
+			},
+		},
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	api := NewAPI(nil, querier, nil, "https://example.com/return", logger, LOCAL)
+
+	request := GetDonationsV1PerStateRequestObject{
+		Params: GetDonationsV1PerStateParams{
+			CreatedAfter: &yesterday,
+		},
+	}
+
+	response, err := api.GetDonationsV1PerState(context.Background(), request)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	successResponse, ok := response.(GetDonationsV1PerState200JSONResponse)
+	if !ok {
+		t.Fatalf("expected GetDonationsV1PerState200JSONResponse, got %T", response)
+	}
+
+	if len(successResponse.Aggregations) != 1 {
+		t.Errorf("expected 1 aggregation, got %d", len(successResponse.Aggregations))
+	}
+}
+
+func TestGetDonationsV1PerState_OnlyCreatedBefore(t *testing.T) {
+	tomorrow := time.Now().Add(24 * time.Hour)
+
+	querier := &MockPaymentQuerierWithPagination{
+		Payments: []payments.Payment{
+			{
+				ID:     "pay_1",
+				Amount: money.New(5000, "USD"),
+				BillingDetails: &payments.BillingDetails{
+					Address: &payments.Address{
+						Country: "US",
+						State:   "MA",
+					},
+				},
+			},
+		},
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	api := NewAPI(nil, querier, nil, "https://example.com/return", logger, LOCAL)
+
+	request := GetDonationsV1PerStateRequestObject{
+		Params: GetDonationsV1PerStateParams{
+			CreatedBefore: &tomorrow,
+		},
+	}
+
+	response, err := api.GetDonationsV1PerState(context.Background(), request)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	successResponse, ok := response.(GetDonationsV1PerState200JSONResponse)
+	if !ok {
+		t.Fatalf("expected GetDonationsV1PerState200JSONResponse, got %T", response)
+	}
+
+	if len(successResponse.Aggregations) != 1 {
+		t.Errorf("expected 1 aggregation, got %d", len(successResponse.Aggregations))
+	}
+}
+
+func TestGetDonationsV1PerState_NoPayments(t *testing.T) {
+	querier := &MockPaymentQuerierWithPagination{
+		Payments: []payments.Payment{},
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	api := NewAPI(nil, querier, nil, "https://example.com/return", logger, LOCAL)
+
+	request := GetDonationsV1PerStateRequestObject{
+		Params: GetDonationsV1PerStateParams{},
+	}
+
+	response, err := api.GetDonationsV1PerState(context.Background(), request)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	successResponse, ok := response.(GetDonationsV1PerState200JSONResponse)
+	if !ok {
+		t.Fatalf("expected GetDonationsV1PerState200JSONResponse, got %T", response)
+	}
+
+	if len(successResponse.Aggregations) != 0 {
+		t.Errorf("expected 0 aggregations, got %d", len(successResponse.Aggregations))
+	}
+}
+
+func TestGetDonationsV1PerState_MultipleStatesAndCurrencies(t *testing.T) {
+	querier := &MockPaymentQuerierWithPagination{
+		Payments: []payments.Payment{
+			{
+				ID:     "pay_1",
+				Amount: money.New(5000, "USD"),
+				BillingDetails: &payments.BillingDetails{
+					Address: &payments.Address{
+						Country: "US",
+						State:   "MA",
+					},
+				},
+			},
+			{
+				ID:     "pay_2",
+				Amount: money.New(10000, "USD"),
+				BillingDetails: &payments.BillingDetails{
+					Address: &payments.Address{
+						Country: "US",
+						State:   "CA",
+					},
+				},
+			},
+			{
+				ID:     "pay_3",
+				Amount: money.New(8000, "EUR"),
+				BillingDetails: &payments.BillingDetails{
+					Address: &payments.Address{
+						Country: "US",
+						State:   "MA",
+					},
+				},
+			},
+			{
+				ID:     "pay_4",
+				Amount: money.New(3000, "CAD"),
+				BillingDetails: &payments.BillingDetails{
+					Address: &payments.Address{
+						Country: "CA",
+						State:   "ON",
+					},
+				},
+			},
+		},
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	api := NewAPI(nil, querier, nil, "https://example.com/return", logger, LOCAL)
+
+	request := GetDonationsV1PerStateRequestObject{
+		Params: GetDonationsV1PerStateParams{},
+	}
+
+	response, err := api.GetDonationsV1PerState(context.Background(), request)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	successResponse, ok := response.(GetDonationsV1PerState200JSONResponse)
+	if !ok {
+		t.Fatalf("expected GetDonationsV1PerState200JSONResponse, got %T", response)
+	}
+
+	// Should have 4 aggregations: US:MA:USD, US:MA:EUR, US:CA:USD, CA:ON:CAD
+	if len(successResponse.Aggregations) != 4 {
+		t.Errorf("expected 4 aggregations, got %d", len(successResponse.Aggregations))
+	}
+
+	// Verify we have all expected combinations
+	expectedCombos := map[string]bool{
+		"US:MA:USD": false,
+		"US:MA:EUR": false,
+		"US:CA:USD": false,
+		"CA:ON:CAD": false,
+	}
+
+	for _, agg := range successResponse.Aggregations {
+		key := agg.Country + ":" + agg.State + ":" + agg.Money.Currency
+		expectedCombos[key] = true
+	}
+
+	for combo, found := range expectedCombos {
+		if !found {
+			t.Errorf("expected aggregation for %s not found", combo)
+		}
+	}
+}
+
+func TestGetDonationsV1PerState_WithNoAddress(t *testing.T) {
+	querier := &MockPaymentQuerierWithPagination{
+		Payments: []payments.Payment{
+			{
+				ID:             "pay_1",
+				Amount:         money.New(5000, "USD"),
+				BillingDetails: nil,
+			},
+			{
+				ID:     "pay_2",
+				Amount: money.New(3000, "USD"),
+				BillingDetails: &payments.BillingDetails{
+					Address: &payments.Address{
+						Country: "US",
+						State:   "NY",
+					},
+				},
+			},
+		},
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	api := NewAPI(nil, querier, nil, "https://example.com/return", logger, LOCAL)
+
+	request := GetDonationsV1PerStateRequestObject{
+		Params: GetDonationsV1PerStateParams{},
+	}
+
+	response, err := api.GetDonationsV1PerState(context.Background(), request)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	successResponse, ok := response.(GetDonationsV1PerState200JSONResponse)
+	if !ok {
+		t.Fatalf("expected GetDonationsV1PerState200JSONResponse, got %T", response)
+	}
+
+	// Should have 2 aggregations: N/A:N/A and US:NY
+	if len(successResponse.Aggregations) != 2 {
+		t.Errorf("expected 2 aggregations, got %d", len(successResponse.Aggregations))
+	}
+
+	// Check for N/A aggregation
+	var foundNA bool
+	for _, agg := range successResponse.Aggregations {
+		if agg.Country == "N/A" && agg.State == "N/A" {
+			foundNA = true
+			if agg.Count != 1 {
+				t.Errorf("expected N/A count 1, got %d", agg.Count)
+			}
+		}
+	}
+	if !foundNA {
+		t.Error("expected N/A:N/A aggregation for payment without address")
 	}
 }
