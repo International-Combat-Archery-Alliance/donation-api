@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/International-Combat-Archery-Alliance/donation-api/donations"
@@ -60,13 +59,6 @@ func (a *API) GetDonationsV1PerState(ctx context.Context, request GetDonationsV1
 			Count: agg.Count,
 		}
 	}
-
-	logger.Info("Admin fetched donation aggregations",
-		"adminEmail", a.getUserEmail(ctx),
-		"count", len(items),
-		"createdAfter", fmt.Sprintf("%v", createdAfter),
-		"createdBefore", fmt.Sprintf("%v", createdBefore),
-	)
 
 	return GetDonationsV1PerState200JSONResponse{
 		Aggregations: items,

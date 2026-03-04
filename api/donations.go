@@ -89,11 +89,6 @@ func (a *API) GetDonationsV1(ctx context.Context, request GetDonationsV1RequestO
 		}
 	}
 
-	logger.Info("Listed donations",
-		"count", len(items),
-		"hasMore", result.NextCursor != nil,
-	)
-
 	return GetDonationsV1200JSONResponse{
 		Items:      items,
 		NextCursor: result.NextCursor,
