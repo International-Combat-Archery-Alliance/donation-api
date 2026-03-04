@@ -7,3 +7,8 @@ s3_prefix = "donation-api"
 region = "us-east-1"
 confirm_changeset = true
 capabilities = "CAPABILITY_IAM"
+parameter_overrides = "architecture=\"x86_64\""
+image_repositories = ["ICAADonationAPI=197461532156.dkr.ecr.us-east-1.amazonaws.com/donationapi63f516b3/icaadonationapiebb27271repo"]
+
+[default.global.parameters]
+region = "us-east-1"
