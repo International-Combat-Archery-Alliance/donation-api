@@ -10,6 +10,74 @@ servers:
     description: Local dev server
 paths:
   /donations/v1:
+    get:
+      summary: List donations
+      description: Admin-only endpoint to list all donations with pagination.
+      security:
+        - googleCookieAuth: [admin]
+        - googleBearerAuth: [admin]
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of donations to return (default 20, max 100)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: cursor
+          in: query
+          description: Pagination cursor for fetching the next page
+          required: false
+          schema:
+            type: string
+        - name: created_after
+          in: query
+          description: Filter donations created after this date (ISO 8601 format)
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: created_before
+          in: query
+          description: Filter donations created before this date (ISO 8601 format)
+          required: false
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: List of donations returned successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DonationListResponse'
+        '400':
+          description: Invalid parameters (e.g., invalid cursor).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized - missing or invalid authentication.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden - user is not an admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Unknown server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
     post:
       summary: Create a donation
       description: Creates a new donation and returns a Stripe checkout session URL.
@@ -191,6 +259,107 @@ components:
           description: Number of donations in this aggregation
           example: 3
 
+    DonationListResponse:
+      type: object
+      required:
+        - items
+        - nextCursor
+      properties:
+        items:
+          type: array
+          description: List of donations
+          items:
+            $ref: '#/components/schemas/DonationItem'
+        nextCursor:
+          type: string
+          description: Cursor for the next page (null if no more results)
+          nullable: true
+          example: "eyJpZCI6InBheV8xMjMifQ=="
+        totalCount:
+          type: integer
+          description: Total number of donations matching the filter (if available)
+          nullable: true
+          example: 150
+
+    DonationItem:
+      type: object
+      required:
+        - id
+        - amount
+        - currency
+        - status
+        - createdAt
+      properties:
+        id:
+          type: string
+          description: Payment ID
+          example: "pay_1234567890"
+        amount:
+          type: integer
+          description: Amount in minor currency units
+          example: 15000
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: "USD"
+        status:
+          type: string
+          description: Payment status
+          example: "succeeded"
+        donorEmail:
+          type: string
+          format: email
+          description: Email of the donor (if available)
+          nullable: true
+          example: "donor@example.com"
+        billingDetails:
+          $ref: '#/components/schemas/BillingDetails'
+        createdAt:
+          type: string
+          format: date-time
+          description: When the donation was created
+          example: "2024-01-15T10:30:00Z"
+        metadata:
+          type: object
+          description: Payment metadata
+          additionalProperties:
+            type: string
+
+    BillingDetails:
+      type: object
+      properties:
+        name:
+          type: string
+          nullable: true
+        email:
+          type: string
+          format: email
+          nullable: true
+        address:
+          $ref: '#/components/schemas/Address'
+
+    Address:
+      type: object
+      properties:
+        city:
+          type: string
+          nullable: true
+        country:
+          type: string
+          nullable: true
+        line1:
+          type: string
+          nullable: true
+        line2:
+          type: string
+          nullable: true
+        postalCode:
+          type: string
+          nullable: true
+        state:
+          type: string
+          nullable: true
+
     Money:
       type: object
       required:
@@ -215,6 +384,7 @@ components:
         - InputValidationError
         - AuthError
         - InvalidDateRange
+        - InvalidCursor
       example: InternalError
 
     Error:

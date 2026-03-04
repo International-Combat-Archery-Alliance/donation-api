@@ -7,7 +7,7 @@ tool github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen
 require (
 	github.com/International-Combat-Archery-Alliance/auth v0.2.1
 	github.com/International-Combat-Archery-Alliance/middleware v0.1.4
-	github.com/International-Combat-Archery-Alliance/payments v0.6.0
+	github.com/International-Combat-Archery-Alliance/payments v0.7.0
 	github.com/Rhymond/go-money v1.0.15
 	github.com/aws/aws-sdk-go-v2 v1.41.3
 	github.com/aws/aws-sdk-go-v2/config v1.32.11

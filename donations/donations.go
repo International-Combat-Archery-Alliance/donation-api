@@ -9,6 +9,12 @@ import (
 	"github.com/Rhymond/go-money"
 )
 
+// Metadata constants for donation identification
+const (
+	MetadataKeyItemType   = "item_type"
+	MetadataValueDonation = "donation"
+)
+
 // CreateDonationCheckout validates amount and creates a Stripe checkout for a donation
 func CreateDonationCheckout(ctx context.Context, checkoutManager payments.CheckoutManager, returnURL string, amount int64, currency, donorEmail string) (string, error) {
 	// Validate amount
@@ -28,7 +34,7 @@ func CreateDonationCheckout(ctx context.Context, checkoutManager payments.Checko
 		CustomerEmail: &donorEmail,
 		ReceiptEmail:  &donorEmail,
 		Metadata: map[string]string{
-			"item_type": "donation",
+			MetadataKeyItemType: MetadataValueDonation,
 		},
 	}
 

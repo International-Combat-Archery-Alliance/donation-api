@@ -32,6 +32,15 @@ func (m *MockPaymentQuerier) ListCharges(ctx context.Context, params payments.Ch
 	}
 }
 
+func (m *MockPaymentQuerier) ListChargesPaginated(ctx context.Context, params payments.ChargeListPaginatedParams) (payments.ChargesPage, error) {
+	// For tests, just return all payments as a single page
+	return payments.ChargesPage{
+		Payments:   m.Payments,
+		HasMore:    false,
+		NextCursor: "",
+	}, m.Err
+}
+
 func TestGetDonationsV1PerState_Success(t *testing.T) {
 	querier := &MockPaymentQuerier{
 		Payments: []payments.Payment{

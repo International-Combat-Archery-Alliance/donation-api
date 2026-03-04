@@ -33,7 +33,7 @@ func AggregateDonationsByState(
 	params := payments.ChargeListParams{
 		CreatedAfter:   createdAfter,
 		CreatedBefore:  createdBefore,
-		MetadataFilter: map[string]string{"item_type": "donation"},
+		MetadataFilter: map[string]string{MetadataKeyItemType: MetadataValueDonation},
 	}
 
 	// Aggregation key: "country:state:currency"
