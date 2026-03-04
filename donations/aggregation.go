@@ -2,7 +2,6 @@ package donations
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -27,7 +26,7 @@ func AggregateDonationsByState(
 ) ([]StateAggregation, error) {
 	// Validate date range if both are provided
 	if createdAfter != nil && createdBefore != nil && createdBefore.Before(*createdAfter) {
-		return nil, errors.New("created_before cannot be before created_after")
+		return nil, NewInvalidDateRangeError("created_before cannot be before created_after")
 	}
 
 	params := payments.ChargeListParams{

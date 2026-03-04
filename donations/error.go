@@ -9,6 +9,7 @@ type ErrorReason string
 const (
 	REASON_INVALID_AMOUNT            ErrorReason = "INVALID_AMOUNT"
 	REASON_FAILED_TO_CREATE_CHECKOUT ErrorReason = "FAILED_TO_CREATE_CHECKOUT"
+	REASON_INVALID_DATE_RANGE        ErrorReason = "INVALID_DATE_RANGE"
 )
 
 type Error struct {
@@ -39,4 +40,8 @@ func NewInvalidAmountError(amount int64) *Error {
 
 func NewFailedToCreateCheckoutError(message string, cause error) *Error {
 	return newDonationError(REASON_FAILED_TO_CREATE_CHECKOUT, message, cause)
+}
+
+func NewInvalidDateRangeError(message string) *Error {
+	return newDonationError(REASON_INVALID_DATE_RANGE, message, nil)
 }

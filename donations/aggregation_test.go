@@ -307,8 +307,12 @@ func TestAggregateDonationsByState_InvalidDateRange(t *testing.T) {
 		t.Fatal("expected error for invalid date range")
 	}
 
-	if err.Error() != "created_before cannot be before created_after" {
-		t.Errorf("expected specific error message, got: %v", err)
+	var donationErr *Error
+	if !errors.As(err, &donationErr) {
+		t.Error("expected error to be of type donations.Error")
+	}
+	if donationErr.Reason != REASON_INVALID_DATE_RANGE {
+		t.Errorf("expected reason INVALID_DATE_RANGE, got %s", donationErr.Reason)
 	}
 }
 
