@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 
+	"github.com/International-Combat-Archery-Alliance/auth"
 	"github.com/International-Combat-Archery-Alliance/middleware"
 	"github.com/International-Combat-Archery-Alliance/payments"
 )
@@ -22,6 +23,8 @@ const (
 // API implements the StrictServerInterface
 type API struct {
 	checkoutManager payments.CheckoutManager
+	paymentQuerier  payments.PaymentQuerier
+	authValidator   auth.Validator
 	returnURL       string
 	logger          *slog.Logger
 	env             Environment
@@ -31,12 +34,16 @@ var _ StrictServerInterface = (*API)(nil)
 
 func NewAPI(
 	checkoutManager payments.CheckoutManager,
+	paymentQuerier payments.PaymentQuerier,
+	authValidator auth.Validator,
 	returnURL string,
 	logger *slog.Logger,
 	env Environment,
 ) *API {
 	return &API{
 		checkoutManager: checkoutManager,
+		paymentQuerier:  paymentQuerier,
+		authValidator:   authValidator,
 		returnURL:       returnURL,
 		logger:          logger,
 		env:             env,
@@ -91,4 +98,18 @@ func (a *API) getLoggerOrBaseLogger(ctx context.Context) *slog.Logger {
 		return a.logger
 	}
 	return logger
+}
+
+func (a *API) userIsAdmin(ctx context.Context) bool {
+	if authToken, ok := middleware.GetJWTFromCtx(ctx); ok {
+		return authToken.IsAdmin()
+	}
+	return false
+}
+
+func (a *API) getUserEmail(ctx context.Context) string {
+	if authToken, ok := middleware.GetJWTFromCtx(ctx); ok {
+		return authToken.UserEmail()
+	}
+	return ""
 }

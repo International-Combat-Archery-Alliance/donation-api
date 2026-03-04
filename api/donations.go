@@ -28,7 +28,7 @@ func (a *API) PostDonationsV1(ctx context.Context, request PostDonationsV1Reques
 			case donations.REASON_INVALID_AMOUNT:
 				logger.Warn("Invalid donation request", "error", err)
 				return PostDonationsV1400JSONResponse{
-					Error:   "BAD_REQUEST",
+					Code:    BadRequest,
 					Message: donationErr.Message,
 				}, nil
 			}
@@ -36,7 +36,7 @@ func (a *API) PostDonationsV1(ctx context.Context, request PostDonationsV1Reques
 
 		logger.Error("Failed to create donation checkout", "error", err)
 		return PostDonationsV1500JSONResponse{
-			Error:   "INTERNAL_ERROR",
+			Code:    InternalError,
 			Message: "Failed to create donation checkout",
 		}, nil
 	}

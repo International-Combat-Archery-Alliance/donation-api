@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/International-Combat-Archery-Alliance/auth/google"
 	"github.com/International-Combat-Archery-Alliance/donation-api/api"
 	"github.com/International-Combat-Archery-Alliance/payments/stripe"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -33,9 +34,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	googleAuthValidator, err := google.NewValidator(ctx)
+	if err != nil {
+		logger.Error("failed to create google auth validator", "error", err)
+		os.Exit(1)
+	}
+
 	returnURL := getReturnURL(env)
 
-	donationAPI := api.NewAPI(stripeClient, returnURL, logger, env)
+	donationAPI := api.NewAPI(stripeClient, stripeClient, googleAuthValidator, returnURL, logger, env)
 
 	host := getEnvOrDefault("HOST", "")
 	port := getEnvOrDefault("PORT", "3003")

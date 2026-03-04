@@ -44,7 +44,7 @@ func TestPostDonationsV1_Success(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	api := NewAPI(mockManager, "https://example.com/return", logger, LOCAL)
+	api := NewAPI(mockManager, nil, nil, "https://example.com/return", logger, LOCAL)
 
 	request := PostDonationsV1RequestObject{
 		Body: &PostDonationsV1JSONRequestBody{
@@ -77,7 +77,7 @@ func TestPostDonationsV1_InvalidAmount(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	api := NewAPI(mockManager, "https://example.com/return", logger, LOCAL)
+	api := NewAPI(mockManager, nil, nil, "https://example.com/return", logger, LOCAL)
 
 	request := PostDonationsV1RequestObject{
 		Body: &PostDonationsV1JSONRequestBody{
@@ -97,8 +97,8 @@ func TestPostDonationsV1_InvalidAmount(t *testing.T) {
 		t.Fatalf("expected PostDonationsV1400JSONResponse, got %T", response)
 	}
 
-	if errorResponse.Error != "BAD_REQUEST" {
-		t.Errorf("expected error code BAD_REQUEST, got %s", errorResponse.Error)
+	if errorResponse.Code != BadRequest {
+		t.Errorf("expected error code BadRequest, got %s", errorResponse.Code)
 	}
 
 	if errorResponse.Message == "" {
@@ -114,7 +114,7 @@ func TestPostDonationsV1_CheckoutManagerError(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	api := NewAPI(mockManager, "https://example.com/return", logger, LOCAL)
+	api := NewAPI(mockManager, nil, nil, "https://example.com/return", logger, LOCAL)
 
 	request := PostDonationsV1RequestObject{
 		Body: &PostDonationsV1JSONRequestBody{
@@ -134,8 +134,8 @@ func TestPostDonationsV1_CheckoutManagerError(t *testing.T) {
 		t.Fatalf("expected PostDonationsV1500JSONResponse, got %T", response)
 	}
 
-	if errorResponse.Error != "INTERNAL_ERROR" {
-		t.Errorf("expected error code INTERNAL_ERROR, got %s", errorResponse.Error)
+	if errorResponse.Code != InternalError {
+		t.Errorf("expected error code InternalError, got %s", errorResponse.Code)
 	}
 
 	if errorResponse.Message != "Failed to create donation checkout" {
@@ -152,7 +152,7 @@ func TestPostDonationsV1_GenericError(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	api := NewAPI(mockManager, "https://example.com/return", logger, LOCAL)
+	api := NewAPI(mockManager, nil, nil, "https://example.com/return", logger, LOCAL)
 
 	request := PostDonationsV1RequestObject{
 		Body: &PostDonationsV1JSONRequestBody{
@@ -172,8 +172,8 @@ func TestPostDonationsV1_GenericError(t *testing.T) {
 		t.Fatalf("expected PostDonationsV1500JSONResponse, got %T", response)
 	}
 
-	if errorResponse.Error != "INTERNAL_ERROR" {
-		t.Errorf("expected error code INTERNAL_ERROR, got %s", errorResponse.Error)
+	if errorResponse.Code != InternalError {
+		t.Errorf("expected error code InternalError, got %s", errorResponse.Code)
 	}
 }
 
@@ -192,7 +192,7 @@ func TestPostDonationsV1_DifferentCurrencies(t *testing.T) {
 			}
 
 			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-			api := NewAPI(mockManager, "https://example.com/return", logger, LOCAL)
+			api := NewAPI(mockManager, nil, nil, "https://example.com/return", logger, LOCAL)
 
 			request := PostDonationsV1RequestObject{
 				Body: &PostDonationsV1JSONRequestBody{
@@ -234,7 +234,7 @@ func TestPostDonationsV1_VaryingAmounts(t *testing.T) {
 			}
 
 			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-			api := NewAPI(mockManager, "https://example.com/return", logger, LOCAL)
+			api := NewAPI(mockManager, nil, nil, "https://example.com/return", logger, LOCAL)
 
 			request := PostDonationsV1RequestObject{
 				Body: &PostDonationsV1JSONRequestBody{

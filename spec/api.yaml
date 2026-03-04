@@ -41,7 +41,71 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /donations/v1/per-state:
+    get:
+      summary: Get donation aggregations by state
+      description: Admin-only endpoint to aggregate donations by country and state/province.
+      security:
+        - googleCookieAuth: [admin]
+        - googleBearerAuth: [admin]
+      parameters:
+        - name: created_after
+          in: query
+          description: Filter donations created after this date (ISO 8601 format)
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: created_before
+          in: query
+          description: Filter donations created before this date (ISO 8601 format)
+          required: false
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Aggregation results returned successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DonationAggregationResponse'
+        '400':
+          description: Invalid date range (created_before is before created_after).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized - missing or invalid authentication.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden - user is not an admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Unknown server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
 components:
+  securitySchemes:
+    googleCookieAuth:
+      type: apiKey
+      in: cookie
+      name: GOOGLE_AUTH_JWT
+    googleBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
   schemas:
     CreateDonationRequest:
       type: object
@@ -74,15 +138,93 @@ components:
           description: Stripe PaymentIntent client secret for embedded checkout
           example: "pi_1234567890_secret_xxxxxxxx"
 
+    DonationAggregationResponse:
+      type: object
+      required:
+        - aggregations
+      properties:
+        aggregations:
+          type: array
+          description: List of donation aggregations by location and currency
+          items:
+            $ref: '#/components/schemas/AggregationItem'
+          example:
+            - country: "US"
+              state: "MA"
+              money:
+                amount: 15000
+                currency: "USD"
+              count: 3
+            - country: "US"
+              state: "CA"
+              money:
+                amount: 25000
+                currency: "USD"
+              count: 5
+            - country: "CA"
+              state: "ON"
+              money:
+                amount: 5000
+                currency: "CAD"
+              count: 2
+
+    AggregationItem:
+      type: object
+      required:
+        - country
+        - state
+        - money
+        - count
+      properties:
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          example: "US"
+        state:
+          type: string
+          description: State or province code
+          example: "MA"
+        money:
+          $ref: '#/components/schemas/Money'
+        count:
+          type: integer
+          description: Number of donations in this aggregation
+          example: 3
+
+    Money:
+      type: object
+      required:
+        - amount
+        - currency
+      properties:
+        amount:
+          type: integer
+          description: Amount in minor currency units (e.g., cents)
+          example: 15000
+        currency:
+          type: string
+          description: ISO 4217 currency code
+          example: "USD"
+
+    ErrorCode:
+      type: string
+      enum:
+        - InternalError
+        - BadRequest
+        - NotFound
+        - InputValidationError
+        - AuthError
+        - InvalidDateRange
+      example: InternalError
+
     Error:
       type: object
       required:
-        - error
+        - code
         - message
       properties:
-        error:
-          type: string
-          example: "BAD_REQUEST"
+        code:
+          $ref: '#/components/schemas/ErrorCode'
         message:
           type: string
           example: "Invalid donation amount"

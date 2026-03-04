@@ -27,6 +27,9 @@ func CreateDonationCheckout(ctx context.Context, checkoutManager payments.Checko
 		}},
 		CustomerEmail: &donorEmail,
 		ReceiptEmail:  &donorEmail,
+		Metadata: map[string]string{
+			"item_type": "donation",
+		},
 	}
 
 	checkoutInfo, err := checkoutManager.CreateCheckout(ctx, checkoutParams)

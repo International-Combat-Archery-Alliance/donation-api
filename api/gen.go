@@ -16,11 +16,41 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/oapi-codegen/runtime"
 	strictnethttp "github.com/oapi-codegen/runtime/strictmiddleware/nethttp"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
+
+const (
+	GoogleBearerAuthScopes = "googleBearerAuth.Scopes"
+	GoogleCookieAuthScopes = "googleCookieAuth.Scopes"
+)
+
+// Defines values for ErrorCode.
+const (
+	AuthError            ErrorCode = "AuthError"
+	BadRequest           ErrorCode = "BadRequest"
+	InputValidationError ErrorCode = "InputValidationError"
+	InternalError        ErrorCode = "InternalError"
+	InvalidDateRange     ErrorCode = "InvalidDateRange"
+	NotFound             ErrorCode = "NotFound"
+)
+
+// AggregationItem defines model for AggregationItem.
+type AggregationItem struct {
+	// Count Number of donations in this aggregation
+	Count int `json:"count"`
+
+	// Country ISO 3166-1 alpha-2 country code
+	Country string `json:"country"`
+	Money   Money  `json:"money"`
+
+	// State State or province code
+	State string `json:"state"`
+}
 
 // CreateDonationRequest defines model for CreateDonationRequest.
 type CreateDonationRequest struct {
@@ -38,10 +68,37 @@ type CreateDonationResponse struct {
 	ClientSecret string `json:"clientSecret"`
 }
 
+// DonationAggregationResponse defines model for DonationAggregationResponse.
+type DonationAggregationResponse struct {
+	// Aggregations List of donation aggregations by location and currency
+	Aggregations []AggregationItem `json:"aggregations"`
+}
+
 // Error defines model for Error.
 type Error struct {
-	Error   string `json:"error"`
-	Message string `json:"message"`
+	Code    ErrorCode `json:"code"`
+	Message string    `json:"message"`
+}
+
+// ErrorCode defines model for ErrorCode.
+type ErrorCode string
+
+// Money defines model for Money.
+type Money struct {
+	// Amount Amount in minor currency units (e.g., cents)
+	Amount int `json:"amount"`
+
+	// Currency ISO 4217 currency code
+	Currency string `json:"currency"`
+}
+
+// GetDonationsV1PerStateParams defines parameters for GetDonationsV1PerState.
+type GetDonationsV1PerStateParams struct {
+	// CreatedAfter Filter donations created after this date (ISO 8601 format)
+	CreatedAfter *time.Time `form:"created_after,omitempty" json:"created_after,omitempty"`
+
+	// CreatedBefore Filter donations created before this date (ISO 8601 format)
+	CreatedBefore *time.Time `form:"created_before,omitempty" json:"created_before,omitempty"`
 }
 
 // PostDonationsV1JSONRequestBody defines body for PostDonationsV1 for application/json ContentType.
@@ -52,6 +109,9 @@ type ServerInterface interface {
 	// Create a donation
 	// (POST /donations/v1)
 	PostDonationsV1(w http.ResponseWriter, r *http.Request)
+	// Get donation aggregations by state
+	// (GET /donations/v1/per-state)
+	GetDonationsV1PerState(w http.ResponseWriter, r *http.Request, params GetDonationsV1PerStateParams)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -68,6 +128,49 @@ func (siw *ServerInterfaceWrapper) PostDonationsV1(w http.ResponseWriter, r *htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PostDonationsV1(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetDonationsV1PerState operation middleware
+func (siw *ServerInterfaceWrapper) GetDonationsV1PerState(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, GoogleCookieAuthScopes, []string{"admin"})
+
+	ctx = context.WithValue(ctx, GoogleBearerAuthScopes, []string{"admin"})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetDonationsV1PerStateParams
+
+	// ------------- Optional query parameter "created_after" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "created_after", r.URL.Query(), &params.CreatedAfter)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "created_after", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "created_before" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "created_before", r.URL.Query(), &params.CreatedBefore)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "created_before", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetDonationsV1PerState(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -198,6 +301,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	}
 
 	m.HandleFunc("POST "+options.BaseURL+"/donations/v1", wrapper.PostDonationsV1)
+	m.HandleFunc("GET "+options.BaseURL+"/donations/v1/per-state", wrapper.GetDonationsV1PerState)
 
 	return m
 }
@@ -237,11 +341,67 @@ func (response PostDonationsV1500JSONResponse) VisitPostDonationsV1Response(w ht
 	return json.NewEncoder(w).Encode(response)
 }
 
+type GetDonationsV1PerStateRequestObject struct {
+	Params GetDonationsV1PerStateParams
+}
+
+type GetDonationsV1PerStateResponseObject interface {
+	VisitGetDonationsV1PerStateResponse(w http.ResponseWriter) error
+}
+
+type GetDonationsV1PerState200JSONResponse DonationAggregationResponse
+
+func (response GetDonationsV1PerState200JSONResponse) VisitGetDonationsV1PerStateResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetDonationsV1PerState400JSONResponse Error
+
+func (response GetDonationsV1PerState400JSONResponse) VisitGetDonationsV1PerStateResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetDonationsV1PerState401JSONResponse Error
+
+func (response GetDonationsV1PerState401JSONResponse) VisitGetDonationsV1PerStateResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetDonationsV1PerState403JSONResponse Error
+
+func (response GetDonationsV1PerState403JSONResponse) VisitGetDonationsV1PerStateResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetDonationsV1PerState500JSONResponse Error
+
+func (response GetDonationsV1PerState500JSONResponse) VisitGetDonationsV1PerStateResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 	// Create a donation
 	// (POST /donations/v1)
 	PostDonationsV1(ctx context.Context, request PostDonationsV1RequestObject) (PostDonationsV1ResponseObject, error)
+	// Get donation aggregations by state
+	// (GET /donations/v1/per-state)
+	GetDonationsV1PerState(ctx context.Context, request GetDonationsV1PerStateRequestObject) (GetDonationsV1PerStateResponseObject, error)
 }
 
 type StrictHandlerFunc = strictnethttp.StrictHTTPHandlerFunc
@@ -304,22 +464,59 @@ func (sh *strictHandler) PostDonationsV1(w http.ResponseWriter, r *http.Request)
 	}
 }
 
+// GetDonationsV1PerState operation middleware
+func (sh *strictHandler) GetDonationsV1PerState(w http.ResponseWriter, r *http.Request, params GetDonationsV1PerStateParams) {
+	var request GetDonationsV1PerStateRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetDonationsV1PerState(ctx, request.(GetDonationsV1PerStateRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetDonationsV1PerState")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetDonationsV1PerStateResponseObject); ok {
+		if err := validResponse.VisitGetDonationsV1PerStateResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"H4sIAAAAAAAC/7xUyY7jNhD9FaKSQwIIktxLJuEp7uVgYIB02nEujYbBIcs2Z8RlWJR7jIb/PSBly5uQ",
-	"XJL4ZJFVrx7fq6p3kM54Z9FGAv4OJFdoRP57H1BEfHBWRO3sM35tkWK68MF5DFFjDhPGtTafKyQZtE/R",
-	"wGGcz5m2jIxoGqTIZBsCWrlhrdWR/YDlsiyYTKXZwgU2mz78CAXgN2F8g8Bv67ouwGirTWuAj9JX3HgE",
-	"DtpGXGKAbQF70EsGk+lv7OZq9OFQVzqFxxVgNn2AHpRi0HaZMJWzLjwaoZuEegjP57/uvkvpDBSwcMGI",
-	"CBwwx1+gbQsI+LXVARXwl71cR7xPyr32+e7TZ5QxsTk3gryzhJdOyEajjVOUAQf8mMagPbInsTFo48RG",
-	"tJF1KYxyTjYBzSdUChWTK5RfXBtP9PJ6Prq6vrn96cPPv9TzLm3+bff7x7efEBx66WMILlw+DPfHByJ3",
-	"44f58+Pvs8fpH0MGGiQSSzzNmdi1aLRiaqck6734e9pd+QPoJfOUoe3CDUyBZeOnSVZWSIk+arvsCRCL",
-	"jk3ux2O21oJ1BpWJjo4d4XS19z3hQAFrDNRBj8q6rNNjnUcrvAYO1/moAC/iKitX9aWq9SgL62igN7oO",
-	"IyaYxbcjfaxiAWMbbLraNdC+LxghJSZs9vwxkU6G5bSJAg5PjuKeOf05gk5RpHjnVB5V6XIH5g3ifaNl",
-	"Dq0+UyK030Pp3/cBF8Dhu+qwqKrdlqqGV1S24/SBvYgKo9ANwbHDMbSYLe8GKwt3Vdf/Gcvd/A7QvD/X",
-	"VuZUxaiVEokWbdNsyuT5zb/Ir5u6ATp3IvmfRc1Fb/+PojP7xbo3ywjDGgPLw1fmmSSUbdBxA/zltQBq",
-	"jRFh03cvE33jdrAdAAF/OW/3p+BUK3M/dEFQQBsa4LCK0ROvKuF1qaUQ5ZsLjapgW5xjfHRSNEzhegiC",
-	"V1WT7leOIr+u67qC7ev2rwAAAP//7HVaYWwHAAA=",
+	"H4sIAAAAAAAC/8xX3XLbNhN9Fcx+30UyQ4uSFTspryrLsavWiT1RnF54PB6IWElISIABQCVqRu/eWfBH",
+	"ZMhUybRJqysRBM6e/TtYfoJYp5lWqJyF6BPYeI0p938nq5XBFXdSq5nDlJYyozM0TqLfEOtcOfoj0MZG",
+	"ZrQTIniZpws0TC+Z0Moft0wq5tbSMr7HhADwI0+zBCEaB+C2GUIEUjlcoYFdUMCbbdfAbH7NxqPT06MR",
+	"40m25kfHrNzLYi2wCQy3c6ixrTNSrQg61Qo98P8NLiGC/4X7KIRlCMIXftMuAOu4wy6NOS0zbVhm9Eaq",
+	"GLvWX0y61ncBGHyfS4MCorvay8pMRa70H+5rAL14i7EjQlOD3OF5Gd1X+D5H67r54Wl/giZ+nXJiU54k",
+	"aB2Lc2NQxVuWK+nYIxysBgGLKRxsqQ27nZ8/bjp2MhwOA0ilkmmeQjSip54ElqD9GXxyPHq6t9uTuPO+",
+	"zAmttHmecpkQ6n67X/+5fB7EOoUAltqk3EEE6PcfykQZrgbvlrmvSYTNtLLY0ymJROXmGBt0fYVkZIbs",
+	"hm9TVG6mHCrHiiPM+jM+CZguUAgULF5j/E7nrhWvTD6MjsdPTk6fPvtp+FAce/hY/g5XYZNgn6eVjw1R",
+	"+LK7jS63XXevpHVNdWiKgmWLLUt0XL5QgjWSUTt7V2vPuCETRa/XrV1V/6go1n0x+tLatzU16S6oEU8O",
+	"Ix4fQpy2EI+biNNJH2IHcDppAV6/hN19ANJhag/J1ueyvauzyY3h227ZN5PVl/rnxmjTp/4CD3HxR6e0",
+	"kUQXreUrbPftTG14IkWjGKouPCSbXi8qzC/ynpYsUZFQ3QF1l1E8KZwK4IyLSj8DeKndhc6VgABmKsvd",
+	"G6LmaVXbJ7lbV/9L6ufc4SuuChJNx9qGOkr2oiqCbxXtVCpt2optW5Ldkuqy/H+EOh/U026WqMYxzo10",
+	"2znVTBGDldarBM+QGzQUcVpb+KeLStJ//f01XZn+DETl2z2ltXMZOVkgTbV+J7FCkuRj7JcgAMU9wOX1",
+	"9eXV84fJ7etfHgrsqmky+RuNAURVqqXuyYxik5uZl2gex5g5qVaN0cdpNptOJmwjOSuUfkDo0hVlQq8q",
+	"cSUcCGCDxhbQo8FwMCQ/dIaKZxIiGPulADLu1j5YYW0q3Ix8PWnbUz/FVWUZZwo/NNpNCWbQ5UbRq/Im",
+	"qi4YZtESE3b76opIU50WwiIgghttXcXcvhlBkX207kyLbaEQ/irzVZ1liSxUPXxriVA1ah6SkP5Zx6ej",
+	"7WAdRIGOy8RCsxqdydGXZ3Fl+cAdD4ffjWV5M/bQnH4e29gfFczmcYzWLvMk2Q4o50/+QX6FCvXQOeOU",
+	"fx9Ub/TkRxi9Ve+U/qCYRbNBw5D2DVpiANHdfQA2T1NeXJs+SIzXhet3t0o/zNAc1aP6qm/QmohUqiOt",
+	"ki1DJTItlaP2rG5AbHTtYlt/U1CLeNywGvS7vXCJzVa4QTMvh/mMG56iQ2P92NLmcyETh6ZhtaoFvqR1",
+	"/8UkiNcjkuRnp8MRK2ZaUngvY+9z9N8OpYqV5x/8+UoffZ7qWZjwjpxMsU+/v5rgApfa4N9gWAB8O8X7",
+	"79jEfzXj9lRxYxszaPPE2VJK/7VurqcpSomhoYQ9akecSVslr1Usj0uSox/R/Tx3a23kHyjYEUultXRj",
+	"asNkSZ/eo3Kl3ZLZ+Pszu9BmIYVAxY5YbtFQsJR2jCvGSTr+Ywr5qWe8uQPPFO6pmbtz1P51S14v0X35",
+	"c6zQ1F1hnOj0SdmN0SKP/fliEwSQm6QcxWwUhjyTAxlzPvigTSJC6KrNlY55wgRu+iCiMKTvwmStrYvG",
+	"w+EwhN397s8AAAD//4Fhdr+/EgAA",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file
