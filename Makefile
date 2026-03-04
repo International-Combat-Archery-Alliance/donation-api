@@ -10,7 +10,7 @@ build-sam:
 
 .PHONY: local
 local: build-sam
-	sam local start-api --parameter-overrides architecture=x86_64 --warm-containers EAGER
+	sam local start-api --parameter-overrides architecture=x86_64 --warm-containers EAGER --port 3003
 
 .PHONY: test
 test:
