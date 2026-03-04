@@ -64,8 +64,8 @@ func (a *API) ListenAndServe(host string, port string) error {
 
 	middlewares := []middleware.MiddlewareFunc{
 		// Executes from the bottom up
-		a.corsMiddleware(),
 		a.openapiValidateMiddleware(swagger),
+		a.corsMiddleware(),
 		swaggerUIMiddleware,
 		middleware.AccessLogging(a.logger),
 	}
