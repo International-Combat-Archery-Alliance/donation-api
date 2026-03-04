@@ -64,8 +64,8 @@ func TestPostDonationsV1_Success(t *testing.T) {
 		t.Fatalf("expected PostDonationsV1200JSONResponse, got %T", response)
 	}
 
-	if successResponse.CheckoutUrl != expectedClientSecret {
-		t.Errorf("expected checkout URL %s, got %s", expectedClientSecret, successResponse.CheckoutUrl)
+	if successResponse.ClientSecret != expectedClientSecret {
+		t.Errorf("expected client secret %s, got %s", expectedClientSecret, successResponse.ClientSecret)
 	}
 }
 
@@ -212,8 +212,8 @@ func TestPostDonationsV1_DifferentCurrencies(t *testing.T) {
 				t.Fatalf("expected PostDonationsV1200JSONResponse, got %T", response)
 			}
 
-			if successResponse.CheckoutUrl != "secret_"+currency {
-				t.Errorf("expected checkout URL secret_%s, got %s", currency, successResponse.CheckoutUrl)
+			if successResponse.ClientSecret != "secret_"+currency {
+				t.Errorf("expected client secret secret_%s, got %s", currency, successResponse.ClientSecret)
 			}
 		})
 	}
@@ -254,8 +254,8 @@ func TestPostDonationsV1_VaryingAmounts(t *testing.T) {
 				t.Fatalf("expected PostDonationsV1200JSONResponse, got %T", response)
 			}
 
-			if successResponse.CheckoutUrl != "secret_amount" {
-				t.Errorf("expected checkout URL secret_amount, got %s", successResponse.CheckoutUrl)
+			if successResponse.ClientSecret != "secret_amount" {
+				t.Errorf("expected client secret secret_amount, got %s", successResponse.ClientSecret)
 			}
 		})
 	}
