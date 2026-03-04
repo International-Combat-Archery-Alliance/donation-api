@@ -67,12 +67,12 @@ components:
     CreateDonationResponse:
       type: object
       required:
-        - checkoutUrl
+        - clientSecret
       properties:
-        checkoutUrl:
+        clientSecret:
           type: string
-          format: uri
-          example: "https://checkout.stripe.com/p/cs_test_..."
+          description: Stripe PaymentIntent client secret for embedded checkout
+          example: "pi_1234567890_secret_xxxxxxxx"
 
     Error:
       type: object

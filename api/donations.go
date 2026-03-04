@@ -42,6 +42,6 @@ func (a *API) PostDonationsV1(ctx context.Context, request PostDonationsV1Reques
 	}
 
 	return PostDonationsV1200JSONResponse{
-		CheckoutUrl: checkoutURL,
+		ClientSecret: checkoutURL,
 	}, nil
 }
