@@ -2,8 +2,8 @@ github.com/International-Combat-Archery-Alliance/auth v0.2.1 h1:Vb7ygqQwG5Q/fzFI
 github.com/International-Combat-Archery-Alliance/auth v0.2.1/go.mod h1:G4MX0I1PpX1bTWEidKvPrmTIjE4ygN27CuejF/jGia4=
 github.com/International-Combat-Archery-Alliance/middleware v0.1.4 h1:aYyHzW5ikuMirHHyfykXu5C8InwTtKqV85dtPiDbkOg=
 github.com/International-Combat-Archery-Alliance/middleware v0.1.4/go.mod h1:BHii4XlmkCDHo1lWoD6lH7iRs8Y+si/H8I8X10M3PAE=
-github.com/International-Combat-Archery-Alliance/payments v0.4.1 h1:V5RStCL3XB2y6V6umfB1Lbq1iu4/Cmc1F/Efd8WLYds=
-github.com/International-Combat-Archery-Alliance/payments v0.4.1/go.mod h1:IEhizLo4cV3KIgfvo2kHJlxThR73KcBBLvpeVrievtc=
+github.com/International-Combat-Archery-Alliance/payments v0.5.0 h1:Hl38FsVsnVxUus2UqMAFxaysRRgrggi05oXiao5adUE=
+github.com/International-Combat-Archery-Alliance/payments v0.5.0/go.mod h1:IEhizLo4cV3KIgfvo2kHJlxThR73KcBBLvpeVrievtc=
 github.com/Rhymond/go-money v1.0.15 h1:rdcIcO8FxCqEwBSt5VZf4hLMfovtcDIiY5/cQWE+7Vo=
 github.com/Rhymond/go-money v1.0.15/go.mod h1:iHvCuIvitxu2JIlAlhF0g9jHqjRSr+rpdOs7Omqlupg=
 github.com/aws/aws-sdk-go-v2 v1.41.3 h1:4kQ/fa22KjDt13QCy1+bYADvdgcxpfH18f0zP542kZA=
