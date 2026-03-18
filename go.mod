@@ -9,7 +9,7 @@ require (
 	github.com/International-Combat-Archery-Alliance/middleware v0.1.4
 	github.com/International-Combat-Archery-Alliance/payments v0.7.0
 	github.com/Rhymond/go-money v1.0.15
-	github.com/aws/aws-sdk-go-v2 v1.41.3
+	github.com/aws/aws-sdk-go-v2 v1.41.4
 	github.com/aws/aws-sdk-go-v2/config v1.32.11
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.68.2
 	github.com/getkin/kin-openapi v0.133.0
