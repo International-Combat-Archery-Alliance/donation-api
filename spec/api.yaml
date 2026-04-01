@@ -14,8 +14,8 @@ paths:
       summary: List donations
       description: Admin-only endpoint to list all donations with pagination.
       security:
-        - googleCookieAuth: [admin]
-        - googleBearerAuth: [admin]
+        - icaaCookieAuth: [admin]
+        - icaaBearerAuth: [admin]
       parameters:
         - name: limit
           in: query
@@ -114,8 +114,8 @@ paths:
       summary: Get donation aggregations by state
       description: Admin-only endpoint to aggregate donations by country and state/province.
       security:
-        - googleCookieAuth: [admin]
-        - googleBearerAuth: [admin]
+        - icaaCookieAuth: [admin]
+        - icaaBearerAuth: [admin]
       parameters:
         - name: created_after
           in: query
@@ -165,14 +165,16 @@ paths:
 
 components:
   securitySchemes:
-    googleCookieAuth:
+    icaaCookieAuth:
       type: apiKey
       in: cookie
-      name: GOOGLE_AUTH_JWT
-    googleBearerAuth:
+      name: ICAA_ACCESS_TOKEN
+      description: ICAA access token cookie
+    icaaBearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+      description: ICAA access token in Authorization header
 
   schemas:
     CreateDonationRequest:

@@ -52,9 +52,10 @@ Resources:
           - Effect: Allow
             Action:
               - ssm:GetParameter
-            Resource: 
+            Resource:
               - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/stripeSecretKey"
               - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/stripeEndpointSecret"
+              - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/jwtSigningKeys"
       Events:
         APIEvent:
           Type: HttpApi

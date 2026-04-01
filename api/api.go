@@ -8,7 +8,7 @@ import (
 	"net"
 	"net/http"
 
-	"github.com/International-Combat-Archery-Alliance/auth"
+	"github.com/International-Combat-Archery-Alliance/auth/token"
 	"github.com/International-Combat-Archery-Alliance/middleware"
 	"github.com/International-Combat-Archery-Alliance/payments"
 )
@@ -24,7 +24,7 @@ const (
 type API struct {
 	checkoutManager payments.CheckoutManager
 	paymentQuerier  payments.PaymentQuerier
-	authValidator   auth.Validator
+	tokenService    *token.TokenService
 	returnURL       string
 	logger          *slog.Logger
 	env             Environment
@@ -35,7 +35,7 @@ var _ StrictServerInterface = (*API)(nil)
 func NewAPI(
 	checkoutManager payments.CheckoutManager,
 	paymentQuerier payments.PaymentQuerier,
-	authValidator auth.Validator,
+	tokenService *token.TokenService,
 	returnURL string,
 	logger *slog.Logger,
 	env Environment,
@@ -43,7 +43,7 @@ func NewAPI(
 	return &API{
 		checkoutManager: checkoutManager,
 		paymentQuerier:  paymentQuerier,
-		authValidator:   authValidator,
+		tokenService:    tokenService,
 		returnURL:       returnURL,
 		logger:          logger,
 		env:             env,
@@ -69,10 +69,15 @@ func (a *API) ListenAndServe(host string, port string) error {
 		return fmt.Errorf("failed to create swagger ui middleware: %w", err)
 	}
 
+	// Setup CORS middleware
+	corsConfig := middleware.DefaultCorsConfig()
+	corsConfig.IsProduction = a.env == PROD
+	corsMiddleware := middleware.CorsMiddleware(corsConfig)
+
 	middlewares := []middleware.MiddlewareFunc{
 		// Executes from the bottom up
 		a.openapiValidateMiddleware(swagger),
-		a.corsMiddleware(),
+		corsMiddleware,
 		swaggerUIMiddleware,
 		middleware.AccessLogging(a.logger),
 	}
