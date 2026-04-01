@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
 	"time"
 
-	"github.com/International-Combat-Archery-Alliance/auth/google"
+	"github.com/International-Combat-Archery-Alliance/auth/token"
 	"github.com/International-Combat-Archery-Alliance/donation-api/api"
 	"github.com/International-Combat-Archery-Alliance/payments/stripe"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -34,15 +36,20 @@ func main() {
 		os.Exit(1)
 	}
 
-	googleAuthValidator, err := google.NewValidator(ctx)
+	signingKeys, currentKeyID, err := getJWTSigningKeys(ctx, env)
 	if err != nil {
-		logger.Error("failed to create google auth validator", "error", err)
+		logger.Error("failed to get JWT signing keys", "error", err)
 		os.Exit(1)
 	}
 
+	tokenService := token.NewTokenService(
+		signingKeys[currentKeyID],
+		token.WithSigningKeys(signingKeys, currentKeyID),
+	)
+
 	returnURL := getReturnURL(env)
 
-	donationAPI := api.NewAPI(stripeClient, stripeClient, googleAuthValidator, returnURL, logger, env)
+	donationAPI := api.NewAPI(stripeClient, stripeClient, tokenService, returnURL, logger, env)
 
 	host := getEnvOrDefault("HOST", "")
 	port := getEnvOrDefault("PORT", "3003")
@@ -118,4 +125,67 @@ func createStripeClient(ctx context.Context, env api.Environment) (*stripe.Clien
 		*apiKeyParam.Parameter.Value,
 		*webhookSecretParam.Parameter.Value,
 	), nil
+}
+
+// jwtSigningKeysData represents the JSON structure for signing keys
+type jwtSigningKeysData struct {
+	CurrentKey string            `json:"currentKey"`
+	Keys       map[string]string `json:"keys"`
+}
+
+// getJWTSigningKeys retrieves the JWT signing keys from environment variable (local)
+// or AWS Parameter Store (production)
+func getJWTSigningKeys(ctx context.Context, env api.Environment) (map[string]token.SigningKey, string, error) {
+	if env == api.LOCAL {
+		// Local development: use environment variable
+		key := os.Getenv("JWT_SIGNING_KEY")
+		if key == "" {
+			key = "local-development-signing-key-minimum-32-characters-long"
+		}
+		return map[string]token.SigningKey{
+			"local": {ID: "local", Key: []byte(key)},
+		}, "local", nil
+	}
+
+	// Production: retrieve from AWS Parameter Store
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		return nil, "", fmt.Errorf("unable to load AWS SDK config: %w", err)
+	}
+
+	client := ssm.NewFromConfig(cfg)
+
+	result, err := client.GetParameter(ctx, &ssm.GetParameterInput{
+		Name:           aws.String("/jwtSigningKeys"),
+		WithDecryption: aws.Bool(true),
+	})
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get JWT signing keys from Parameter Store: %w", err)
+	}
+
+	// Parse JSON response
+	var data jwtSigningKeysData
+	if err := json.Unmarshal([]byte(*result.Parameter.Value), &data); err != nil {
+		return nil, "", fmt.Errorf("failed to parse JWT signing keys JSON: %w", err)
+	}
+
+	// Convert to map of SigningKey (keys are base64 encoded)
+	signingKeys := make(map[string]token.SigningKey)
+	for keyID, keyValue := range data.Keys {
+		decodedKey, err := base64.StdEncoding.DecodeString(keyValue)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to decode base64 key %q: %w", keyID, err)
+		}
+		signingKeys[keyID] = token.SigningKey{
+			ID:  keyID,
+			Key: decodedKey,
+		}
+	}
+
+	// Validate that current key exists
+	if _, ok := signingKeys[data.CurrentKey]; !ok {
+		return nil, "", fmt.Errorf("current key ID %q not found in keys", data.CurrentKey)
+	}
+
+	return signingKeys, data.CurrentKey, nil
 }
