@@ -6,6 +6,7 @@ import (
 
 	"github.com/International-Combat-Archery-Alliance/payments"
 	"github.com/Rhymond/go-money"
+	"go.opentelemetry.io/otel/codes"
 )
 
 // ListParams defines parameters for listing donations with pagination
@@ -39,6 +40,9 @@ func ListDonations(
 	querier payments.PaymentQuerier,
 	params ListParams,
 ) (*ListResult, error) {
+	ctx, span := tracer.Start(ctx, "ListDonations")
+	defer span.End()
+
 	// Apply default and max limits
 	limit := params.Limit
 	if limit <= 0 {
@@ -64,6 +68,8 @@ func ListDonations(
 
 	page, err := querier.ListChargesPaginated(ctx, paymentParams)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return nil, NewListDonationsError("Failed to list donations", err)
 	}
 
