@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/International-Combat-Archery-Alliance/auth/token"
@@ -73,8 +75,18 @@ func main() {
 
 	logger.Info("Starting donation API server", "host", host, "port", port, "env", env)
 
-	err = donationAPI.ListenAndServe(host, port)
-	if err != nil {
+	sigCtx, sigStop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer sigStop()
+
+	serverErrCh := make(chan error, 1)
+	go func() {
+		serverErrCh <- donationAPI.ListenAndServe(host, port)
+	}()
+
+	select {
+	case <-sigCtx.Done():
+		logger.Info("shutting down gracefully")
+	case err := <-serverErrCh:
 		logger.Error("Server error", "error", err)
 		os.Exit(1)
 	}
