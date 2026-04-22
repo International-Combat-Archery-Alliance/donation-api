@@ -6,10 +6,14 @@ import (
 	"time"
 
 	"github.com/International-Combat-Archery-Alliance/donation-api/donations"
+	"go.opentelemetry.io/otel/codes"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 func (a *API) GetDonationsV1(ctx context.Context, request GetDonationsV1RequestObject) (GetDonationsV1ResponseObject, error) {
+	ctx, span := a.tracer.Start(ctx, "GetDonationsV1")
+	defer span.End()
+
 	logger := a.getLoggerOrBaseLogger(ctx)
 
 	// Apply default limit if not provided
@@ -37,6 +41,8 @@ func (a *API) GetDonationsV1(ctx context.Context, request GetDonationsV1RequestO
 	// Query donations with pagination
 	result, err := donations.ListDonations(ctx, a.paymentQuerier, listParams)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		logger.Error("Failed to list donations", "error", err)
 		return GetDonationsV1500JSONResponse{
 			Code:    InternalError,
@@ -97,6 +103,9 @@ func (a *API) GetDonationsV1(ctx context.Context, request GetDonationsV1RequestO
 }
 
 func (a *API) GetDonationsV1PerState(ctx context.Context, request GetDonationsV1PerStateRequestObject) (GetDonationsV1PerStateResponseObject, error) {
+	ctx, span := a.tracer.Start(ctx, "GetDonationsV1PerState")
+	defer span.End()
+
 	logger := a.getLoggerOrBaseLogger(ctx)
 
 	// Validate date range if both are provided
@@ -121,7 +130,7 @@ func (a *API) GetDonationsV1PerState(ctx context.Context, request GetDonationsV1
 	// Query and aggregate donations
 	aggregations, err := donations.AggregateDonationsByState(ctx, a.paymentQuerier, createdAfter, createdBefore)
 	if err != nil {
-		logger.Error("failed to aggregate donations", "error", err)
+		span.RecordError(err)
 		var donationErr *donations.Error
 		if errors.As(err, &donationErr) && donationErr.Reason == donations.REASON_INVALID_DATE_RANGE {
 			return GetDonationsV1PerState400JSONResponse{
@@ -129,6 +138,8 @@ func (a *API) GetDonationsV1PerState(ctx context.Context, request GetDonationsV1
 				Message: err.Error(),
 			}, nil
 		}
+		span.SetStatus(codes.Error, err.Error())
+		logger.Error("failed to aggregate donations", "error", err)
 		return GetDonationsV1PerState500JSONResponse{
 			Code:    InternalError,
 			Message: "Failed to aggregate donations",
@@ -155,6 +166,9 @@ func (a *API) GetDonationsV1PerState(ctx context.Context, request GetDonationsV1
 }
 
 func (a *API) PostDonationsV1(ctx context.Context, request PostDonationsV1RequestObject) (PostDonationsV1ResponseObject, error) {
+	ctx, span := a.tracer.Start(ctx, "PostDonationsV1")
+	defer span.End()
+
 	logger := a.getLoggerOrBaseLogger(ctx)
 
 	body := request.Body
@@ -169,6 +183,7 @@ func (a *API) PostDonationsV1(ctx context.Context, request PostDonationsV1Reques
 	)
 
 	if err != nil {
+		span.RecordError(err)
 		var donationErr *donations.Error
 		if errors.As(err, &donationErr) {
 			switch donationErr.Reason {
@@ -181,6 +196,7 @@ func (a *API) PostDonationsV1(ctx context.Context, request PostDonationsV1Reques
 			}
 		}
 
+		span.SetStatus(codes.Error, err.Error())
 		logger.Error("Failed to create donation checkout", "error", err)
 		return PostDonationsV1500JSONResponse{
 			Code:    InternalError,

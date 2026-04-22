@@ -11,6 +11,9 @@ import (
 	"github.com/International-Combat-Archery-Alliance/auth/token"
 	"github.com/International-Combat-Archery-Alliance/middleware"
 	"github.com/International-Combat-Archery-Alliance/payments"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type Environment int
@@ -28,6 +31,7 @@ type API struct {
 	returnURL       string
 	logger          *slog.Logger
 	env             Environment
+	tracer          trace.Tracer
 }
 
 var _ StrictServerInterface = (*API)(nil)
@@ -47,6 +51,7 @@ func NewAPI(
 		returnURL:       returnURL,
 		logger:          logger,
 		env:             env,
+		tracer:          otel.Tracer("github.com/International-Combat-Archery-Alliance/donation-api/api"),
 	}
 }
 
@@ -87,6 +92,7 @@ func (a *API) ListenAndServe(host string, port string) error {
 	}
 
 	h := middleware.UseMiddlewares(r, middlewares...)
+	h = otelhttp.NewHandler(h, "")
 
 	s := &http.Server{
 		Handler: h,

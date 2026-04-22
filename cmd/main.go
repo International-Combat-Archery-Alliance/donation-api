@@ -6,15 +6,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"time"
 
 	"github.com/International-Combat-Archery-Alliance/auth/token"
 	"github.com/International-Combat-Archery-Alliance/donation-api/api"
+	"github.com/International-Combat-Archery-Alliance/donation-api/telemetry"
 	"github.com/International-Combat-Archery-Alliance/payments/stripe"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 const (
@@ -26,11 +29,25 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	traceShutdown, err := telemetry.Init(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to initialize telemetry: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCancel()
+		if err := traceShutdown(shutdownCtx); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to shutdown telemetry: %v\n", err)
+		}
+	}()
+
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	env := getEnvironment()
 
-	stripeClient, err := createStripeClient(ctx, env)
+	instrumentedHTTPClient := &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)}
+	stripeClient, err := createStripeClient(ctx, env, instrumentedHTTPClient)
 	if err != nil {
 		logger.Error("Failed to create Stripe client", "error", err)
 		os.Exit(1)
@@ -88,14 +105,14 @@ func getReturnURL(env api.Environment) string {
 	return getEnvOrDefault("STRIPE_RETURN_URL", "https://www.icaa.world/donation/success")
 }
 
-func createStripeClient(ctx context.Context, env api.Environment) (*stripe.Client, error) {
+func createStripeClient(ctx context.Context, env api.Environment, httpClient *http.Client) (*stripe.Client, error) {
 	if env == api.LOCAL {
 		apiKey := getEnvOrDefault("STRIPE_SECRET_KEY", "")
 		if apiKey == "" {
 			return nil, fmt.Errorf("STRIPE_SECRET_KEY environment variable is required")
 		}
 		webhookSecret := getEnvOrDefault("STRIPE_ENDPOINT_SECRET", "")
-		return stripe.NewClient(apiKey, webhookSecret), nil
+		return stripe.NewClient(apiKey, webhookSecret, stripe.WithHTTPClient(httpClient)), nil
 	}
 
 	cfg, err := config.LoadDefaultConfig(ctx)
@@ -124,6 +141,7 @@ func createStripeClient(ctx context.Context, env api.Environment) (*stripe.Clien
 	return stripe.NewClient(
 		*apiKeyParam.Parameter.Value,
 		*webhookSecretParam.Parameter.Value,
+		stripe.WithHTTPClient(httpClient),
 	), nil
 }
 
