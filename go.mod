@@ -15,7 +15,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.68.2
 	github.com/getkin/kin-openapi v0.133.0
 	github.com/oapi-codegen/nethttp-middleware v1.1.2
-	github.com/oapi-codegen/runtime v1.2.0
+	github.com/oapi-codegen/runtime v1.4.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
 )
