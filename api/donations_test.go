@@ -36,6 +36,17 @@ func (m *MockCheckoutManager) ConfirmCheckout(ctx context.Context, payload []byt
 	return nil, nil
 }
 
+func newTestAPI(
+	checkoutManager payments.CheckoutManager,
+	paymentQuerier payments.PaymentQuerier,
+	returnURL string,
+	logger *slog.Logger,
+	env Environment,
+) *API {
+	return NewAPI(checkoutManager, paymentQuerier, nil, returnURL, logger, env, func(_ context.Context) error { return nil })
+}
+
+
 func TestPostDonationsV1_Success(t *testing.T) {
 	expectedClientSecret := "secret_test_123"
 	mockManager := &MockCheckoutManager{
@@ -47,7 +58,7 @@ func TestPostDonationsV1_Success(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	api := NewAPI(mockManager, nil, nil, "https://example.com/return", logger, LOCAL)
+	api := newTestAPI(mockManager, nil, "https://example.com/return", logger, LOCAL)
 
 	request := PostDonationsV1RequestObject{
 		Body: &PostDonationsV1JSONRequestBody{
@@ -80,7 +91,7 @@ func TestPostDonationsV1_InvalidAmount(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	api := NewAPI(mockManager, nil, nil, "https://example.com/return", logger, LOCAL)
+	api := newTestAPI(mockManager, nil, "https://example.com/return", logger, LOCAL)
 
 	request := PostDonationsV1RequestObject{
 		Body: &PostDonationsV1JSONRequestBody{
@@ -117,7 +128,7 @@ func TestPostDonationsV1_CheckoutManagerError(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	api := NewAPI(mockManager, nil, nil, "https://example.com/return", logger, LOCAL)
+	api := newTestAPI(mockManager, nil, "https://example.com/return", logger, LOCAL)
 
 	request := PostDonationsV1RequestObject{
 		Body: &PostDonationsV1JSONRequestBody{
@@ -155,7 +166,7 @@ func TestPostDonationsV1_GenericError(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	api := NewAPI(mockManager, nil, nil, "https://example.com/return", logger, LOCAL)
+	api := newTestAPI(mockManager, nil, "https://example.com/return", logger, LOCAL)
 
 	request := PostDonationsV1RequestObject{
 		Body: &PostDonationsV1JSONRequestBody{
@@ -195,7 +206,7 @@ func TestPostDonationsV1_DifferentCurrencies(t *testing.T) {
 			}
 
 			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-			api := NewAPI(mockManager, nil, nil, "https://example.com/return", logger, LOCAL)
+			api := newTestAPI(mockManager, nil, "https://example.com/return", logger, LOCAL)
 
 			request := PostDonationsV1RequestObject{
 				Body: &PostDonationsV1JSONRequestBody{
@@ -237,7 +248,7 @@ func TestPostDonationsV1_VaryingAmounts(t *testing.T) {
 			}
 
 			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-			api := NewAPI(mockManager, nil, nil, "https://example.com/return", logger, LOCAL)
+			api := newTestAPI(mockManager, nil, "https://example.com/return", logger, LOCAL)
 
 			request := PostDonationsV1RequestObject{
 				Body: &PostDonationsV1JSONRequestBody{
@@ -362,7 +373,7 @@ func TestGetDonationsV1_Success(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	api := NewAPI(nil, querier, nil, "https://example.com/return", logger, LOCAL)
+	api := newTestAPI(nil, querier, "https://example.com/return", logger, LOCAL)
 
 	request := GetDonationsV1RequestObject{
 		Params: GetDonationsV1Params{},
@@ -414,7 +425,7 @@ func TestGetDonationsV1_WithLimit(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	api := NewAPI(nil, querier, nil, "https://example.com/return", logger, LOCAL)
+	api := newTestAPI(nil, querier, "https://example.com/return", logger, LOCAL)
 
 	limit := 2
 	request := GetDonationsV1RequestObject{
@@ -453,7 +464,7 @@ func TestGetDonationsV1_WithPagination(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	api := NewAPI(nil, querier, nil, "https://example.com/return", logger, LOCAL)
+	api := newTestAPI(nil, querier, "https://example.com/return", logger, LOCAL)
 
 	// First page
 	limit := 2
@@ -525,7 +536,7 @@ func TestGetDonationsV1_WithDateFilter(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	api := NewAPI(nil, querier, nil, "https://example.com/return", logger, LOCAL)
+	api := newTestAPI(nil, querier, "https://example.com/return", logger, LOCAL)
 
 	request := GetDonationsV1RequestObject{
 		Params: GetDonationsV1Params{
@@ -555,7 +566,7 @@ func TestGetDonationsV1_NoPayments(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	api := NewAPI(nil, querier, nil, "https://example.com/return", logger, LOCAL)
+	api := newTestAPI(nil, querier, "https://example.com/return", logger, LOCAL)
 
 	request := GetDonationsV1RequestObject{
 		Params: GetDonationsV1Params{},
@@ -588,7 +599,7 @@ func TestGetDonationsV1_LimitExceedsMax(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	api := NewAPI(nil, querier, nil, "https://example.com/return", logger, LOCAL)
+	api := newTestAPI(nil, querier, "https://example.com/return", logger, LOCAL)
 
 	// Try to request more than max (100)
 	limit := 200
@@ -643,7 +654,7 @@ func TestGetDonationsV1PerState_Success(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	api := NewAPI(nil, querier, nil, "https://example.com/return", logger, LOCAL)
+	api := newTestAPI(nil, querier, "https://example.com/return", logger, LOCAL)
 
 	request := GetDonationsV1PerStateRequestObject{
 		Params: GetDonationsV1PerStateParams{},
@@ -686,7 +697,7 @@ func TestGetDonationsV1PerState_InvalidDateRange(t *testing.T) {
 	yesterday := now.Add(-24 * time.Hour)
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	api := NewAPI(nil, &MockPaymentQuerierWithPagination{}, nil, "https://example.com/return", logger, LOCAL)
+	api := newTestAPI(nil, &MockPaymentQuerierWithPagination{}, "https://example.com/return", logger, LOCAL)
 
 	request := GetDonationsV1PerStateRequestObject{
 		Params: GetDonationsV1PerStateParams{
@@ -731,7 +742,7 @@ func TestGetDonationsV1PerState_WithDateRange(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	api := NewAPI(nil, querier, nil, "https://example.com/return", logger, LOCAL)
+	api := newTestAPI(nil, querier, "https://example.com/return", logger, LOCAL)
 
 	request := GetDonationsV1PerStateRequestObject{
 		Params: GetDonationsV1PerStateParams{
@@ -774,7 +785,7 @@ func TestGetDonationsV1PerState_OnlyCreatedAfter(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	api := NewAPI(nil, querier, nil, "https://example.com/return", logger, LOCAL)
+	api := newTestAPI(nil, querier, "https://example.com/return", logger, LOCAL)
 
 	request := GetDonationsV1PerStateRequestObject{
 		Params: GetDonationsV1PerStateParams{
@@ -816,7 +827,7 @@ func TestGetDonationsV1PerState_OnlyCreatedBefore(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	api := NewAPI(nil, querier, nil, "https://example.com/return", logger, LOCAL)
+	api := newTestAPI(nil, querier, "https://example.com/return", logger, LOCAL)
 
 	request := GetDonationsV1PerStateRequestObject{
 		Params: GetDonationsV1PerStateParams{
@@ -845,7 +856,7 @@ func TestGetDonationsV1PerState_NoPayments(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	api := NewAPI(nil, querier, nil, "https://example.com/return", logger, LOCAL)
+	api := newTestAPI(nil, querier, "https://example.com/return", logger, LOCAL)
 
 	request := GetDonationsV1PerStateRequestObject{
 		Params: GetDonationsV1PerStateParams{},
@@ -913,7 +924,7 @@ func TestGetDonationsV1PerState_MultipleStatesAndCurrencies(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	api := NewAPI(nil, querier, nil, "https://example.com/return", logger, LOCAL)
+	api := newTestAPI(nil, querier, "https://example.com/return", logger, LOCAL)
 
 	request := GetDonationsV1PerStateRequestObject{
 		Params: GetDonationsV1PerStateParams{},
@@ -976,7 +987,7 @@ func TestGetDonationsV1PerState_WithNoAddress(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	api := NewAPI(nil, querier, nil, "https://example.com/return", logger, LOCAL)
+	api := newTestAPI(nil, querier, "https://example.com/return", logger, LOCAL)
 
 	request := GetDonationsV1PerStateRequestObject{
 		Params: GetDonationsV1PerStateParams{},
