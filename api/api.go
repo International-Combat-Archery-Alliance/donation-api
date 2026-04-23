@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/International-Combat-Archery-Alliance/auth/token"
 	"github.com/International-Combat-Archery-Alliance/middleware"
@@ -31,6 +32,7 @@ type API struct {
 	logger          *slog.Logger
 	env             Environment
 	tracer          trace.Tracer
+	flushTraces     func(context.Context) error
 }
 
 var _ StrictServerInterface = (*API)(nil)
@@ -42,6 +44,7 @@ func NewAPI(
 	returnURL string,
 	logger *slog.Logger,
 	env Environment,
+	flushTraces func(context.Context) error,
 ) *API {
 	return &API{
 		checkoutManager: checkoutManager,
@@ -51,6 +54,7 @@ func NewAPI(
 		logger:          logger,
 		env:             env,
 		tracer:          otel.Tracer("github.com/International-Combat-Archery-Alliance/donation-api/api"),
+		flushTraces:     flushTraces,
 	}
 }
 
@@ -83,8 +87,9 @@ func (a *API) ListenAndServe(host string, port string) error {
 		a.openapiValidateMiddleware(swagger),
 		corsMiddleware,
 		swaggerUIMiddleware,
-		middleware.OTELHandler,
 		middleware.AccessLogging(a.logger),
+		middleware.OTELHandler,
+		middleware.FlushTraces(a.flushTraces, a.logger, 3*time.Second),
 	}
 
 	if a.env == PROD {

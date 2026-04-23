@@ -26,16 +26,31 @@ import (
 const (
 	stripeWebhookSigningSecretSSMKey = "/stripeEndpointSecret"
 	stripeAPISecretKeySSMKey         = "/stripeSecretKey"
+	newRelicLicenseEnvVar            = "NEW_RELIC_LICENSE_KEY"
+	newRelicLicenseSSMPath           = "/newrelic-license-key"
 )
 
 func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	endpoint := os.Getenv("OTEL_COLLECTOR_ENDPOINT")
-	traceShutdown, _, err := telemetry.Init(ctx, telemetry.Options{
+	env := getEnvironment()
+
+	licenseKey, err := getNewRelicLicenseKey(ctx, env)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to get New Relic license key: %v\n", err)
+		os.Exit(1)
+	}
+
+	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	if endpoint == "" {
+		endpoint = "otlp.nr-data.net:4317"
+	}
+
+	traceShutdown, flushTraces, err := telemetry.Init(ctx, telemetry.Options{
 		ServiceName: "donation-api",
 		Endpoint:    endpoint,
+		APIKey:      licenseKey,
 		Lambda:      telemetry.LambdaInfoFromEnv(),
 	})
 	if err != nil {
@@ -55,8 +70,6 @@ func main() {
 	// Start a root trace span for startup
 	tracer := otel.Tracer("github.com/International-Combat-Archery-Alliance/donation-api/cmd")
 	ctx, span := tracer.Start(ctx, "startup")
-
-	env := getEnvironment()
 
 	instrumentedHTTPClient := telemetry.InstrumentedHTTPClient()
 
@@ -90,7 +103,7 @@ func main() {
 
 	returnURL := getReturnURL(env)
 
-	donationAPI := api.NewAPI(stripeClient, stripeClient, tokenService, returnURL, logger, env)
+	donationAPI := api.NewAPI(stripeClient, stripeClient, tokenService, returnURL, logger, env, flushTraces)
 
 	// End startup span after initialization completes
 	span.End()
@@ -189,6 +202,31 @@ func createStripeClient(ctx context.Context, env api.Environment, httpClient *ht
 		*webhookSecretParam.Parameter.Value,
 		stripe.WithHTTPClient(httpClient),
 	), nil
+}
+
+// getNewRelicLicenseKey retrieves the New Relic license key from environment variable (local)
+// or AWS Parameter Store (production)
+func getNewRelicLicenseKey(ctx context.Context, env api.Environment) (string, error) {
+	if env == api.LOCAL {
+		return os.Getenv(newRelicLicenseEnvVar), nil
+	}
+
+	cfg, err := loadAWSConfig(ctx)
+	if err != nil {
+		return "", fmt.Errorf("unable to load AWS SDK config: %w", err)
+	}
+
+	client := ssm.NewFromConfig(cfg)
+
+	result, err := client.GetParameter(ctx, &ssm.GetParameterInput{
+		Name:           aws.String(newRelicLicenseSSMPath),
+		WithDecryption: aws.Bool(true),
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to get New Relic license key from Parameter Store: %w", err)
+	}
+
+	return *result.Parameter.Value, nil
 }
 
 // jwtSigningKeysData represents the JSON structure for signing keys
