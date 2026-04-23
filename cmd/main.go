@@ -12,14 +12,15 @@ import (
 	"syscall"
 	"time"
 
+	"go.opentelemetry.io/otel"
+
 	"github.com/International-Combat-Archery-Alliance/auth/token"
 	"github.com/International-Combat-Archery-Alliance/donation-api/api"
-	"github.com/International-Combat-Archery-Alliance/donation-api/telemetry"
 	"github.com/International-Combat-Archery-Alliance/payments/stripe"
+	"github.com/International-Combat-Archery-Alliance/telemetry"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 const (
@@ -31,7 +32,12 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	traceShutdown, err := telemetry.Init(ctx)
+	endpoint := os.Getenv("OTEL_COLLECTOR_ENDPOINT")
+	traceShutdown, _, err := telemetry.Init(ctx, telemetry.Options{
+		ServiceName: "donation-api",
+		Endpoint:    endpoint,
+		Lambda:      telemetry.LambdaInfoFromEnv(),
+	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to initialize telemetry: %v\n", err)
 		os.Exit(1)
@@ -46,17 +52,33 @@ func main() {
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
+	// Start a root trace span for startup
+	tracer := otel.Tracer("github.com/International-Combat-Archery-Alliance/donation-api/cmd")
+	ctx, span := tracer.Start(ctx, "startup")
+
 	env := getEnvironment()
 
-	instrumentedHTTPClient := &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)}
-	stripeClient, err := createStripeClient(ctx, env, instrumentedHTTPClient)
-	if err != nil {
+	instrumentedHTTPClient := telemetry.InstrumentedHTTPClient()
+
+	var stripeClient *stripe.Client
+	if err := telemetry.RunWithSpan(ctx, tracer, "init-stripe-client", func(ctx context.Context) error {
+		var err error
+		stripeClient, err = createStripeClient(ctx, env, instrumentedHTTPClient)
+		return err
+	}); err != nil {
+		span.RecordError(err)
 		logger.Error("Failed to create Stripe client", "error", err)
 		os.Exit(1)
 	}
 
-	signingKeys, currentKeyID, err := getJWTSigningKeys(ctx, env)
-	if err != nil {
+	var signingKeys map[string]token.SigningKey
+	var currentKeyID string
+	if err := telemetry.RunWithSpan(ctx, tracer, "init-jwt-signing-keys", func(ctx context.Context) error {
+		var err error
+		signingKeys, currentKeyID, err = getJWTSigningKeys(ctx, env)
+		return err
+	}); err != nil {
+		span.RecordError(err)
 		logger.Error("failed to get JWT signing keys", "error", err)
 		os.Exit(1)
 	}
@@ -69,6 +91,9 @@ func main() {
 	returnURL := getReturnURL(env)
 
 	donationAPI := api.NewAPI(stripeClient, stripeClient, tokenService, returnURL, logger, env)
+
+	// End startup span after initialization completes
+	span.End()
 
 	host := getEnvOrDefault("HOST", "")
 	port := getEnvOrDefault("PORT", "3003")
@@ -110,6 +135,15 @@ func getEnvOrDefault(key, defaultValue string) string {
 	return defaultValue
 }
 
+func loadAWSConfig(ctx context.Context, optFns ...func(*config.LoadOptions) error) (aws.Config, error) {
+	cfg, err := config.LoadDefaultConfig(ctx, optFns...)
+	if err != nil {
+		return aws.Config{}, err
+	}
+	telemetry.InstrumentAWSConfig(&cfg)
+	return cfg, nil
+}
+
 func getReturnURL(env api.Environment) string {
 	if env == api.LOCAL {
 		return getEnvOrDefault("STRIPE_RETURN_URL", "http://localhost:5173/donation/success")
@@ -127,7 +161,7 @@ func createStripeClient(ctx context.Context, env api.Environment, httpClient *ht
 		return stripe.NewClient(apiKey, webhookSecret, stripe.WithHTTPClient(httpClient)), nil
 	}
 
-	cfg, err := config.LoadDefaultConfig(ctx)
+	cfg, err := loadAWSConfig(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}
@@ -178,7 +212,7 @@ func getJWTSigningKeys(ctx context.Context, env api.Environment) (map[string]tok
 	}
 
 	// Production: retrieve from AWS Parameter Store
-	cfg, err := config.LoadDefaultConfig(ctx)
+	cfg, err := loadAWSConfig(ctx)
 	if err != nil {
 		return nil, "", fmt.Errorf("unable to load AWS SDK config: %w", err)
 	}
