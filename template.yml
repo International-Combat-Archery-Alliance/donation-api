@@ -30,6 +30,7 @@ Globals:
       Variables:
         STRIPE_SECRET_KEY: !Ref StripeSecretKey
         STRIPE_ENDPOINT_SECRET: !Ref StripeEndpointSecret
+        OTEL_EXPORTER_OTLP_ENDPOINT: ""
 
 Resources:
   DonationHttp:
