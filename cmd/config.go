@@ -2,13 +2,10 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"os"
 	"sync"
 
-	"github.com/International-Combat-Archery-Alliance/auth/token"
 	"github.com/International-Combat-Archery-Alliance/donation-api/api"
 	"github.com/International-Combat-Archery-Alliance/telemetry"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -96,8 +93,8 @@ func getSSMParameters(ctx context.Context, names []string) (map[string]string, e
 }
 
 type AppConfig struct {
-	JWTSigningKeys       map[string]token.SigningKey
-	JWTCurrentKeyID      string
+	// JWKSURL is the login JWKS endpoint used to verify user tokens.
+	JWKSURL              string
 	StripeSecretKey      string
 	StripeEndpointSecret string
 }
@@ -110,16 +107,8 @@ func fetchAppConfig(ctx context.Context, env api.Environment) (*AppConfig, error
 }
 
 func localAppConfig() (*AppConfig, error) {
-	key := os.Getenv("JWT_SIGNING_KEY")
-	if key == "" {
-		key = "local-development-signing-key-minimum-32-characters-long"
-	}
-
 	return &AppConfig{
-		JWTSigningKeys: map[string]token.SigningKey{
-			"local": {ID: "local", Key: []byte(key)},
-		},
-		JWTCurrentKeyID:      "local",
+		JWKSURL:              jwksURLForEnv(api.LOCAL),
 		StripeSecretKey:      os.Getenv("STRIPE_SECRET_KEY"),
 		StripeEndpointSecret: os.Getenv("STRIPE_ENDPOINT_SECRET"),
 	}, nil
@@ -127,7 +116,6 @@ func localAppConfig() (*AppConfig, error) {
 
 func fetchProdAppConfig(ctx context.Context) (*AppConfig, error) {
 	ssmNames := []string{
-		"/jwtSigningKeys",
 		"/stripeSecretKey",
 		"/stripeEndpointSecret",
 	}
@@ -137,17 +125,8 @@ func fetchProdAppConfig(ctx context.Context) (*AppConfig, error) {
 		return nil, fmt.Errorf("failed to fetch app config from SSM: %w", err)
 	}
 
-	cfg := &AppConfig{}
-
-	if v, ok := params["/jwtSigningKeys"]; ok {
-		signingKeys, currentKeyID, err := parseJWTSigningKeysJSON(v)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse JWT signing keys: %w", err)
-		}
-		cfg.JWTSigningKeys = signingKeys
-		cfg.JWTCurrentKeyID = currentKeyID
-	} else {
-		return nil, fmt.Errorf("missing SSM parameter: /jwtSigningKeys")
+	cfg := &AppConfig{
+		JWKSURL: jwksURLForEnv(api.PROD),
 	}
 
 	if v, ok := params["/stripeSecretKey"]; ok {
@@ -165,34 +144,16 @@ func fetchProdAppConfig(ctx context.Context) (*AppConfig, error) {
 	return cfg, nil
 }
 
-type jwtSigningKeysData struct {
-	CurrentKey string            `json:"currentKey"`
-	Keys       map[string]string `json:"keys"`
-}
-
-func parseJWTSigningKeysJSON(raw string) (map[string]token.SigningKey, string, error) {
-	var data jwtSigningKeysData
-	if err := json.Unmarshal([]byte(raw), &data); err != nil {
-		return nil, "", fmt.Errorf("failed to parse JWT signing keys JSON: %w", err)
+// jwksURLForEnv returns the login JWKS endpoint used to verify user tokens.
+// LOGIN_JWKS_URL overrides both environments.
+func jwksURLForEnv(env api.Environment) string {
+	if u := os.Getenv("LOGIN_JWKS_URL"); u != "" {
+		return u
 	}
-
-	signingKeys := make(map[string]token.SigningKey)
-	for keyID, keyValue := range data.Keys {
-		decodedKey, err := base64.StdEncoding.DecodeString(keyValue)
-		if err != nil {
-			return nil, "", fmt.Errorf("failed to decode base64 key %q: %w", keyID, err)
-		}
-		signingKeys[keyID] = token.SigningKey{
-			ID:  keyID,
-			Key: decodedKey,
-		}
+	if env == api.LOCAL {
+		return "http://localhost:3001/login/.well-known/jwks.json"
 	}
-
-	if _, ok := signingKeys[data.CurrentKey]; !ok {
-		return nil, "", fmt.Errorf("current key ID %q not found in keys", data.CurrentKey)
-	}
-
-	return signingKeys, data.CurrentKey, nil
+	return "https://api.icaa.world/login/.well-known/jwks.json"
 }
 
 func getNewRelicLicenseKey(ctx context.Context, env api.Environment) (string, error) {
