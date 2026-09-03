@@ -27,7 +27,7 @@ const (
 type API struct {
 	checkoutManager payments.CheckoutManager
 	paymentQuerier  payments.PaymentQuerier
-	tokenService    *token.TokenService
+	validator       UserTokenValidator
 	returnURL       string
 	logger          *slog.Logger
 	env             Environment
@@ -35,12 +35,17 @@ type API struct {
 	flushTraces     func(context.Context) error
 }
 
+// UserTokenValidator verifies user access tokens against the login JWKS endpoint.
+type UserTokenValidator interface {
+	ValidateUserAccessToken(ctx context.Context, tokenString string) (*token.ICAAClaims, error)
+}
+
 var _ StrictServerInterface = (*API)(nil)
 
 func NewAPI(
 	checkoutManager payments.CheckoutManager,
 	paymentQuerier payments.PaymentQuerier,
-	tokenService *token.TokenService,
+	validator UserTokenValidator,
 	returnURL string,
 	logger *slog.Logger,
 	env Environment,
@@ -49,7 +54,7 @@ func NewAPI(
 	return &API{
 		checkoutManager: checkoutManager,
 		paymentQuerier:  paymentQuerier,
-		tokenService:    tokenService,
+		validator:       validator,
 		returnURL:       returnURL,
 		logger:          logger,
 		env:             env,
