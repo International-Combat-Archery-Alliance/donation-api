@@ -10,7 +10,7 @@ build-sam:
 
 .PHONY: local
 local: build-sam
-	sam local start-api --docker-network icaa-shared --parameter-overrides architecture=x86_64 --warm-containers EAGER --port 3003 --env-vars env.json
+	sam local start-api --docker-network icaa-shared --add-host host.docker.internal:host-gateway --parameter-overrides architecture=x86_64 --warm-containers EAGER --port 3003 --env-vars env.json
 
 
 .PHONY: test
